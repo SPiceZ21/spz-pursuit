@@ -1,0 +1,201 @@
+-- server/main.lua — Hot Pursuit
+-- 1 runner vs up to 6 chasers. Lobby escrow → roles → isolated bucket → runner
+-- head start → server-authoritative BUST METER: it fills while any chaser is
+-- within range of the runner (proximity, since the global no-collision rules out
+-- ramming). Meter full = busted (chasers win); survive the timer = runner wins.
+
+local Log = SPZ and SPZ.Logger and SPZ.Logger("spz-pursuit") or nil
+local function log(m) if Log then Log.info(m) else print("[pursuit] " .. m) end end
+
+local lobby = {}
+local lobbyArmed = false
+local round = nil
+
+local function notify(src, msg, t) TriggerClientEvent("spz-pursuit:notify", src, msg, t or "info") end
+
+local function pidOf(src)
+    local ok, p = pcall(function() return exports["spz-identity"]:GetProfile(src) end)
+    return ok and p and p.id or nil, ok and p or nil
+end
+local function srcFromPid(pid)
+    for _, s in ipairs(GetPlayers()) do if pidOf(tonumber(s)) == pid then return tonumber(s) end end
+    return nil
+end
+local function escrow(src, amt)
+    local ok, prof = pcall(function() return exports["spz-identity"]:GetProfile(src) end)
+    if not ok or not prof or (prof.credits or 0) < amt then return false end
+    exports["spz-identity"]:UpdateProfile(src, { credits = (prof.credits or 0) - amt })
+    return true
+end
+local function payPid(pid, amt, reason)
+    if amt <= 0 then return end
+    local s = srcFromPid(pid)
+    if s then exports["spz-progression"]:GrantBonus(s, { credits = amt, reason = reason })
+    else MySQL.update.await("UPDATE players SET credits = credits + ? WHERE id = ?", { amt, pid }) end
+end
+local function shuffle(t) for i = #t, 2, -1 do local j = math.random(i); t[i], t[j] = t[j], t[i] end end
+local function lobbyCount() local n = 0; for _ in pairs(lobby) do n = n + 1 end; return n end
+
+local function refundLobby(reason)
+    for src, e in pairs(lobby) do
+        payPid(e.pid, e.stake, "Hot Pursuit refund")
+        notify(src, ("Lobby cancelled (%s) — %d refunded"):format(reason, e.stake), "warning")
+    end
+    lobby = {}; lobbyArmed = false
+end
+
+local function endRound(winnerRole, reason)
+    if not round then return end
+    local r = round; round = nil
+
+    local winners = {}
+    for _, p in pairs(r.players) do if p.role == winnerRole then winners[#winners + 1] = p end end
+    local pool = math.floor(r.pot * (1 - (Config.HouseRake or 0)))
+    local share = (#winners > 0) and math.floor(pool / #winners) or 0
+    for _, p in ipairs(winners) do payPid(p.pid, share, "Hot Pursuit won") end
+
+    for src, p in pairs(r.players) do
+        TriggerClientEvent("spz-pursuit:over", src, {
+            winner = winnerRole, reason = reason, won = (p.role == winnerRole), payout = (p.role == winnerRole) and share or 0,
+        })
+    end
+
+    SetTimeout(1500, function()
+        if r.bucketId and r.bucketId ~= 0 and GetResourceState("spz-core") == "started" then
+            exports["spz-core"]:DeleteBucket(r.bucketId)
+        end
+    end)
+    pcall(function()
+        exports["spz-log"]:Log("minigame", "Hot Pursuit",
+            ("%s won (%s). Pot %d / %d winner(s)."):format(winnerRole, reason, pool, #winners), "success")
+    end)
+    log(("round over: %s (%s)"):format(winnerRole, reason))
+end
+
+local function startRound()
+    lobbyArmed = false
+    if lobbyCount() < Config.MinPlayers then refundLobby("not enough players"); return end
+
+    local roster = {}
+    for src, e in pairs(lobby) do roster[#roster + 1] = { src = src, pid = e.pid, name = e.name, stake = e.stake } end
+    shuffle(roster)
+
+    local bucketId = 0
+    if GetResourceState("spz-core") == "started" then
+        bucketId = exports["spz-core"]:CreateBucket("pursuit")
+        SetRoutingBucketPopulationEnabled(bucketId, true)   -- traffic for cover
+    end
+
+    round = {
+        bucketId = bucketId, players = {}, pot = 0, phase = "head", meter = 0,
+        headEndsAt = GetGameTimer() + (Config.HeadStartSec * 1000),
+        endsAt = GetGameTimer() + ((Config.HeadStartSec + Config.RoundTimeSec) * 1000),
+        runner = roster[1].src, chasers = {},
+    }
+
+    for i, m in ipairs(roster) do
+        local isRunner = (i == 1)
+        round.players[m.src] = { pid = m.pid, name = m.name, stake = m.stake, role = isRunner and "runner" or "chaser" }
+        round.pot = round.pot + m.stake
+        if not isRunner then round.chasers[#round.chasers + 1] = m.src end
+        if bucketId ~= 0 then exports["spz-core"]:AssignPlayerToBucket(m.src, bucketId) end
+    end
+    lobby = {}
+
+    local roles = {}
+    for src, p in pairs(round.players) do roles[#roles + 1] = { src = src, role = p.role } end
+
+    for src, p in pairs(round.players) do
+        TriggerClientEvent("spz-pursuit:start", src, {
+            role = p.role, arena = Config.Arena, spread = Config.SpawnSpread,
+            headTime = Config.HeadStartSec, roundTime = Config.RoundTimeSec,
+            runnerModel = Config.RunnerModel, chaserModel = Config.ChaserModel,
+            runner = round.runner, roles = roles,
+        })
+    end
+    log(("round start: 1 runner + %d chasers, pot %d"):format(#round.chasers, round.pot))
+end
+
+-- ── Tick ────────────────────────────────────────────────────────────────────
+CreateThread(function()
+    while true do
+        Wait(500)
+        if round then
+            local now = GetGameTimer()
+
+            if round.phase == "head" and now >= round.headEndsAt then
+                round.phase = "chase"
+                for src in pairs(round.players) do TriggerClientEvent("spz-pursuit:release", src) end
+            end
+
+            if round.phase == "chase" then
+                local rped = GetPlayerPed(round.runner)
+                local inRange = false
+                if rped ~= 0 then
+                    local rp = GetEntityCoords(rped)
+                    for _, c in ipairs(round.chasers) do
+                        local cped = GetPlayerPed(c)
+                        if cped ~= 0 and #(rp - GetEntityCoords(cped)) < (Config.BustDist or 18.0) then inRange = true; break end
+                    end
+                end
+
+                if inRange then round.meter = math.min(100, round.meter + (Config.BustFillPerSec or 22) * 0.5)
+                else round.meter = math.max(0, round.meter - (Config.BustDrainPerSec or 9) * 0.5) end
+
+                if round.meter >= 100 then endRound("chaser", "runner busted")
+                elseif now >= round.endsAt then endRound("runner", "escaped") end
+            end
+
+            if round then
+                local remain = math.max(0, math.floor((round.endsAt - GetGameTimer()) / 1000))
+                local headRemain = math.max(0, math.floor((round.headEndsAt - GetGameTimer()) / 1000))
+                for src in pairs(round.players) do
+                    TriggerClientEvent("spz-pursuit:state", src, {
+                        phase = round.phase, remain = remain, headRemain = headRemain, meter = math.floor(round.meter),
+                    })
+                end
+            end
+        end
+    end
+end)
+
+-- ── Commands ──────────────────────────────────────────────────────────────────
+RegisterCommand(Config.Command, function(source)
+    local src = source
+    if round and round.players[src] then notify(src, "You're in a round.", "error"); return end
+    if round then notify(src, "A round is in progress.", "warning"); return end
+    if lobby[src] then payPid(lobby[src].pid, lobby[src].stake, "Hot Pursuit refund"); lobby[src] = nil; notify(src, "Left the lobby — refunded.", "info"); return end
+    if lobbyCount() >= Config.MaxPlayers then notify(src, "Lobby full.", "error"); return end
+
+    local pid, prof = pidOf(src)
+    if not pid then notify(src, "Profile not ready.", "error"); return end
+    if (prof.credits or 0) < Config.Stake then notify(src, "Not enough credits.", "error"); return end
+    if not escrow(src, Config.Stake) then notify(src, "Couldn't stake.", "error"); return end
+
+    lobby[src] = { pid = pid, name = prof.username or GetPlayerName(src), stake = Config.Stake }
+    notify(src, ("Joined Hot Pursuit (staked %d). %d in lobby."):format(Config.Stake, lobbyCount()), "success")
+
+    if not lobbyArmed then
+        lobbyArmed = true
+        SetTimeout((Config.LobbyWaitSec or 30) * 1000, function()
+            if not round and lobbyArmed then startRound() end
+        end)
+    end
+end, false)
+
+RegisterCommand(Config.StartCommand, function(source)
+    local src = source
+    if round then return end
+    if not lobby[src] then notify(src, "Join first with /" .. Config.Command, "error"); return end
+    if lobbyCount() < Config.MinPlayers then notify(src, ("Need %d players."):format(Config.MinPlayers), "error"); return end
+    startRound()
+end, false)
+
+AddEventHandler("playerDropped", function()
+    local src = source
+    if lobby[src] then payPid(lobby[src].pid, lobby[src].stake, "Hot Pursuit refund"); lobby[src] = nil; return end
+    if round and round.players[src] then
+        -- Runner disconnects → chasers win; a chaser leaving just thins the pack.
+        if round.players[src].role == "runner" then endRound("chaser", "runner left") end
+    end
+end)
