@@ -4,9 +4,8 @@ Config = {}
 Config.Command      = "pursuit"
 Config.StartCommand = "purstart"
 
--- ── Wager ───────────────────────────────────────────────────────────────────
-Config.Stake     = 300
-Config.HouseRake = 0.0
+-- ── Reward (FREE to join — no entry fee) ────────────────────────────────────
+Config.WinReward = 600     -- flat credits paid to each winner (0 = no reward)
 
 -- ── Lobby ───────────────────────────────────────────────────────────────────
 Config.MinPlayers   = 2     -- 1 runner + 1 chaser minimum
