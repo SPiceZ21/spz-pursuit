@@ -1,5 +1,5 @@
 -- server/main.lua — Hot Pursuit
--- 1 runner vs up to 6 chasers. Lobby escrow → roles → isolated bucket → runner
+-- 1 runner vs up to 6 chasers. Free lobby → roles → isolated bucket → runner
 -- head start → server-authoritative BUST METER: it fills while any chaser is
 -- within range of the runner (proximity, since the global no-collision rules out
 -- ramming). Meter full = busted (chasers win); survive the timer = runner wins.
@@ -20,12 +20,6 @@ end
 local function srcFromPid(pid)
     for _, s in ipairs(GetPlayers()) do if pidOf(tonumber(s)) == pid then return tonumber(s) end end
     return nil
-end
-local function escrow(src, amt)
-    local ok, prof = pcall(function() return exports["spz-identity"]:GetProfile(src) end)
-    if not ok or not prof or (prof.credits or 0) < amt then return false end
-    exports["spz-identity"]:UpdateProfile(src, { credits = (prof.credits or 0) - amt })
-    return true
 end
 local function payPid(pid, amt, reason)
     if amt <= 0 then return end
