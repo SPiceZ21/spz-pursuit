@@ -25,5 +25,11 @@ Config.BustDrainPerSec = 9     -- meter %/s draining when clear
 Config.Arena       = vector3(340.0, -1400.0, 32.5)   -- city/industrial spread
 Config.SpawnSpread = 60.0
 
-Config.RunnerModel = "sultan"   -- nimble getaway car
-Config.ChaserModel = "police"   -- cop cruiser
+Config.RunnerModel = "sultan"   -- nimble getaway car (default/fallback)
+Config.ChaserModel = "police"   -- cop cruiser (default/fallback)
+
+-- ── Car selection ───────────────────────────────────────────────────────────
+-- Offered in the lobby menu. First entry in each list is the fallback used
+-- when a player never picks (or picks something no longer on the list).
+Config.RunnerModels = { "sultan", "sultanrs", "buffalo", "kuruma", "ruston" }
+Config.ChaserModels = { "police", "police2", "police3", "sheriff" }

@@ -14,6 +14,142 @@ local blips   = {}         -- [serverId] = blip
 
 RegisterNetEvent("spz-pursuit:notify", function(msg, t) lib.notify({ description = msg, type = t or "info" }) end)
 
+-- ── Queue / invite / car-select menu (ox_lib context) ─────────────────────────
+
+local function prettyModelLabel(model)
+    local hash = GetHashKey(model)
+    local nameGxt = GetDisplayNameFromVehicleModel(hash)
+    local nameText = (nameGxt and nameGxt ~= "") and GetLabelText(nameGxt) or ""
+    if nameText == "NULL" or nameText == "" then nameText = model end
+    return nameText
+end
+
+local function openLobbyMenu()
+    local st = lib.callback.await("spz-pursuit:lobbyState", false)
+    if not st then return end
+
+    if st.roundLive then
+        lib.notify({ description = "A round is already in progress.", type = "warning" })
+        return
+    end
+
+    -- Runner car submenu
+    local runnerOptions = {}
+    for _, m in ipairs(st.runnerModels) do
+        local isPicked = st.carPref and st.carPref.runner == m
+        runnerOptions[#runnerOptions + 1] = {
+            title = prettyModelLabel(m),
+            description = isPicked and "Selected" or "Tap to select",
+            icon = isPicked and "check" or "car",
+            onSelect = function()
+                lib.callback.await("spz-pursuit:setCar", false, "runner", m)
+                openLobbyMenu()
+            end,
+        }
+    end
+    lib.registerContext({ id = "spz_pursuit_runner_car", title = "Runner Car", menu = "spz_pursuit_lobby", options = runnerOptions })
+
+    -- Chaser car submenu
+    local chaserOptions = {}
+    for _, m in ipairs(st.chaserModels) do
+        local isPicked = st.carPref and st.carPref.chaser == m
+        chaserOptions[#chaserOptions + 1] = {
+            title = prettyModelLabel(m),
+            description = isPicked and "Selected" or "Tap to select",
+            icon = isPicked and "check" or "car-side",
+            onSelect = function()
+                lib.callback.await("spz-pursuit:setCar", false, "chaser", m)
+                openLobbyMenu()
+            end,
+        }
+    end
+    lib.registerContext({ id = "spz_pursuit_chaser_car", title = "Chaser Car", menu = "spz_pursuit_lobby", options = chaserOptions })
+
+    -- Invite submenu
+    local online = lib.callback.await("spz-pursuit:online", false) or {}
+    local inviteOptions = {}
+    if #online == 0 then
+        inviteOptions[1] = { title = "No one else online", disabled = true }
+    else
+        for _, p in ipairs(online) do
+            inviteOptions[#inviteOptions + 1] = {
+                title = p.name,
+                icon = "user-plus",
+                onSelect = function()
+                    TriggerServerEvent("spz-pursuit:invite", p.source)
+                end,
+            }
+        end
+    end
+    lib.registerContext({ id = "spz_pursuit_invite", title = "Invite Player", menu = "spz_pursuit_lobby", search = #online > 6, options = inviteOptions })
+
+    -- Read-only roster
+    local mainOptions = {
+        {
+            title = st.inLobby and "Leave Queue" or "Join Queue",
+            description = st.inLobby and "You're queued — tap to leave" or "Free to join",
+            icon = st.inLobby and "right-from-bracket" or "right-to-bracket",
+            iconColor = st.inLobby and "#ff4d5e" or "#ff6200",
+            onSelect = function()
+                lib.callback.await("spz-pursuit:joinToggle", false)
+                openLobbyMenu()
+            end,
+        },
+        {
+            title = "Runner Car",
+            description = (st.carPref and st.carPref.runner and prettyModelLabel(st.carPref.runner)) or ("Default: " .. prettyModelLabel(st.runnerModels[1])),
+            icon = "car",
+            arrow = true,
+            menu = "spz_pursuit_runner_car",
+        },
+        {
+            title = "Chaser Car",
+            description = (st.carPref and st.carPref.chaser and prettyModelLabel(st.carPref.chaser)) or ("Default: " .. prettyModelLabel(st.chaserModels[1])),
+            icon = "car-side",
+            arrow = true,
+            menu = "spz_pursuit_chaser_car",
+        },
+        {
+            title = "Invite Player",
+            description = #online .. " online",
+            icon = "user-plus",
+            arrow = true,
+            menu = "spz_pursuit_invite",
+        },
+        {
+            title = ("── Queue %d/%d%s ──"):format(st.count, st.max, st.armed and (" · starts in " .. (st.armedRemain or 0) .. "s") or ""),
+            disabled = true,
+        },
+    }
+
+    if #st.roster == 0 then
+        mainOptions[#mainOptions + 1] = { title = "Queue is empty", disabled = true }
+    else
+        for _, r in ipairs(st.roster) do
+            mainOptions[#mainOptions + 1] = { title = (r.isMe and "★ " or "") .. r.name, disabled = true }
+        end
+    end
+
+    lib.registerContext({ id = "spz_pursuit_lobby", title = "🚓 Hot Pursuit", options = mainOptions })
+    lib.showContext("spz_pursuit_lobby")
+end
+
+RegisterCommand("pursuitmenu", function() openLobbyMenu() end, false)
+RegisterKeyMapping("pursuitmenu", "Hot Pursuit queue menu", "keyboard", "")
+
+RegisterNetEvent("spz-pursuit:invited", function(d)
+    local resp = lib.alertDialog({
+        header = "Hot Pursuit Invite",
+        content = ("**%s** invited you to join Hot Pursuit."):format(d.fromName or "Someone"),
+        centered = true,
+        cancel = true,
+        labels = { cancel = "Dismiss", confirm = "Join" },
+    })
+    if resp == "confirm" then
+        TriggerServerEvent("spz-pursuit:acceptInvite")
+    end
+end)
+
 local function fmt(s) return ("%d:%02d"):format(math.floor(s / 60), s % 60) end
 
 local function clearBlips()
