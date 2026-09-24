@@ -2,7 +2,7 @@ fx_version 'cerulean'
 game 'gta5'
 
 name 'spz-pursuit'
-description 'SPiceZ Minigame — Hot Pursuit. 1 runner vs up to 6 chasers; proximity bust meter; survive to escape or get busted. Credit wager, pot to the winning side.'
+description 'SPiceZ Minigame — Hot Pursuit. Host a room, pick roles (1 robber, 1-10 cops, optional PD chopper), cars and tuner setups; robber breaks out of Pacific Standard, police set up then chase; stop the robber and hold to bust.'
 version '1.0.0'
 author 'SPiceZ-Core'
 lua54 'yes'
@@ -13,18 +13,20 @@ shared_scripts {
 }
 
 client_scripts {
-  'client/main.lua',
+  'client/util.lua',
+  'client/customize.lua',
+  'client/lobby.lua',
+  'client/match.lua',
 }
 
 server_scripts {
-  '@oxmysql/lib/MySQL.lua',
-  'server/main.lua',
+  'server/rooms.lua',
+  'server/match.lua',
 }
 
 dependencies {
   'ox_lib',
-  'oxmysql',
   'spz-core',
   'spz-identity',
-  'spz-progression',
+  'spz-tunners',
 }
