@@ -46,6 +46,17 @@ function Pursuit.SpawnCar(model, at, preset)
     if veh == 0 then return 0 end
 
     SetVehicleOnGroundProperly(veh)
+    if Config.VehicleDamage ~= false then
+        -- Undo anything godmode applied before it stood down.
+        SetEntityCanBeDamaged(veh, true)
+        SetEntityInvincible(veh, false)
+        SetEntityProofs(veh, false, false, false, false, false, false, false, false)
+        SetVehicleCanBeVisiblyDamaged(veh, true)
+        SetVehicleStrong(veh, false)
+        SetVehicleTyresCanBurst(veh, true)
+        SetVehicleWheelsCanBreak(veh, true)
+        SetVehicleEngineCanDegrade(veh, true)
+    end
     SetVehicleModKit(veh, 0)
     SetVehicleDirtLevel(veh, 0.0)
     SetVehicleEngineOn(veh, true, true, false)

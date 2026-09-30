@@ -106,6 +106,10 @@ function Pursuit.StartMatch(room)
     end
 
     each(match, function(src, p)
+        -- Same as joining a race: the freeroam car goes (spz-vehicles).
+        pcall(function()
+            if GetResourceState("spz-vehicles") == "started" then exports["spz-vehicles"]:DespawnVehicle(src) end
+        end)
         setBucket(src, bucket)
         setMatchState(src, true)
         TriggerClientEvent("spz-pursuit:begin", src, {
@@ -124,10 +128,20 @@ end
 
 local function startChase(room)
     local match = room.match
-    match.phase = "chase"
-    match.chaseEndsAt = GetGameTimer() + Config.ChaseSec * 1000
-    each(match, function(src) TriggerClientEvent("spz-pursuit:go", src) end)
-    log(("room %d: chase started"):format(room.id))
+    -- "countdown" stops the tick from starting it twice while we count.
+    match.phase = "countdown"
+    CreateThread(function()
+        for n = 3, 1, -1 do
+            if room.match ~= match or match.phase ~= "countdown" then return end
+            each(match, function(src) TriggerClientEvent("spz-pursuit:countdown", src, n) end)
+            Wait(1000)
+        end
+        if room.match ~= match or match.phase ~= "countdown" then return end
+        match.phase = "chase"
+        match.chaseEndsAt = GetGameTimer() + Config.ChaseSec * 1000
+        each(match, function(src) TriggerClientEvent("spz-pursuit:go", src) end)
+        log(("room %d: chase started"):format(room.id))
+    end)
 end
 
 --- Clients delete their own cars first (they own them, and only while still
@@ -247,6 +261,12 @@ RegisterNetEvent("spz-pursuit:bustHold", function(holding)
     match.holding[source] = holding == true or nil
 end)
 
+RegisterNetEvent("spz-pursuit:wrecked", function()
+    local room, match, p = matchOf(source)
+    if not p or match.phase ~= "chase" then return end
+    if p.role == "robber" then endMatch(room, "police", "the getaway car was wrecked") end
+end)
+
 RegisterNetEvent("spz-pursuit:died", function()
     local room, match, p = matchOf(source)
     if not p or match.phase == "over" then return end
@@ -282,9 +302,10 @@ CreateThread(function()
                     local dt = TICK_MS / 1000
                     local speed = speedKmh(match.robber)
                     local busting = false
+                    -- Automatic: any living cop close enough while the robber is slow.
                     if speed <= Config.BustMaxSpeedKmh then
-                        for src in pairs(match.holding) do
-                            if dist(src, match.robber) <= Config.BustDistance then busting = true; break end
+                        for src, p in pairs(match.players) do
+                            if p.role == "cop" and dist(src, match.robber) <= Config.BustDistance then busting = true; break end
                         end
                     end
 

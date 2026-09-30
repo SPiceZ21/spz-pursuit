@@ -6,7 +6,7 @@
 
 local M = nil   -- current match; nil when not in one
 
-local KEY_BUST, KEY_READY = Config.Keys.bust.control, Config.Keys.ready.control
+local KEY_READY = Config.Keys.ready.control
 
 function Pursuit.InMatch() return M ~= nil end
 
@@ -108,6 +108,51 @@ local function spawnRobber()
     FreezeEntityPosition(ped, true)   -- held in the bank until the police are set
 end
 
+
+-- Countdown / GO clips from spz-raceUI (ui/public/aud), game audio as fallback.
+local function playClip(name)
+    if GetResourceState("spz-raceUI") == "started" then
+        local ok = pcall(function() exports["spz-raceUI"]:PlaySound(name, 1.0) end)
+        if ok then return end
+    end
+    if name == "go" then
+        PlaySoundFrontend(-1, "GO", "HUD_MINI_GAME_SOUNDSET", true)
+    else
+        PlaySoundFrontend(-1, "3_2_1", "HUD_MINI_GAME_SOUNDSET", true)
+    end
+end
+
+-- Big centred number for the 3-2-1, drawn for ~0.9 s.
+local function flashCount(txt, r, g, b)
+    CreateThread(function()
+        local untilAt = GetGameTimer() + 900
+        while GetGameTimer() < untilAt do
+            SetTextFont(4); SetTextScale(0.0, 2.2); SetTextCentre(true); SetTextOutline()
+            SetTextColour(r or 255, g or 255, b or 255, 240)
+            BeginTextCommandDisplayText("STRING")
+            AddTextComponentSubstringPlayerName(txt)
+            EndTextCommandDisplayText(0.5, 0.36)
+            Wait(0)
+        end
+    end)
+end
+
+
+-- Joining a minigame: despawn the freeroam car the player was driving, so it
+-- isn't left abandoned in freeroam (or dragged into the minigame world).
+local function despawnFreeroamCar()
+    local ped = PlayerPedId()
+    local veh = GetVehiclePedIsIn(ped, false)
+    if veh == 0 or GetPedInVehicleSeat(veh, -1) ~= ped then return end
+    local dl = GetGameTimer() + 1000
+    while not NetworkHasControlOfEntity(veh) and GetGameTimer() < dl do
+        NetworkRequestControlOfEntity(veh); Wait(0)
+    end
+    SetEntityAsMissionEntity(veh, true, true)
+    DeleteVehicle(veh)
+    if DoesEntityExist(veh) then DeleteEntity(veh) end
+end
+
 -- ── Lifecycle ────────────────────────────────────────────────────────────────
 
 RegisterNetEvent("spz-pursuit:begin", function(d)
@@ -129,6 +174,7 @@ RegisterNetEvent("spz-pursuit:begin", function(d)
     TriggerEvent("spz:minigameChanged")
 
     fadeOut()
+    despawnFreeroamCar()
     -- Drops the phasing exclusions spz-core put on this ped, so contact works.
     SetEntityCollision(ped, true, true)
 
@@ -150,16 +196,22 @@ RegisterNetEvent("spz-pursuit:state", function(s)
     M.phase, M.remain, M.ready, M.police, M.bust = s.phase, s.remain, s.ready, s.police, s.bust
 end)
 
+RegisterNetEvent("spz-pursuit:countdown", function(n)
+    if not M then return end
+    flashCount(tostring(n))
+    playClip("countdown")
+end)
+
 RegisterNetEvent("spz-pursuit:go", function()
     if not M then return end
     M.phase = "chase"
     if M.role == "robber" then
         FreezeEntityPosition(PlayerPedId(), false)
         bigMessage("~r~GO!", "Get to your car and lose the police")
-        PlaySoundFrontend(-1, "Mission_Pass_Notify", "DLC_HEISTS_GENERAL_FRONTEND_SOUNDS", true)
+        playClip("go")
     else
         bigMessage("~b~ROBBER IS MOVING", "Chase them down")
-        PlaySoundFrontend(-1, "Mission_Pass_Notify", "DLC_HEISTS_GENERAL_FRONTEND_SOUNDS", true)
+        playClip("go")
     end
 end)
 
@@ -223,18 +275,8 @@ CreateThread(function()
                 end
             end
 
-            -- Bust: a cop near a robber who has (nearly) stopped holds the key.
-            -- The server re-checks distance and speed before the bar moves.
-            if M.phase == "chase" and M.role == "cop" and not M.dead then
-                local rped = playerPed(M.robber)
-                local near = rped ~= 0 and #(GetEntityCoords(PlayerPedId()) - GetEntityCoords(rped)) <= Config.BustDistance
-                if near then DisableControlAction(0, 86, true) end       -- E is also the horn
-                local want = near and (IsControlPressed(0, KEY_BUST) or IsDisabledControlPressed(0, KEY_BUST))
-                if want ~= M.holding then
-                    M.holding = want
-                    TriggerServerEvent("spz-pursuit:bustHold", want)
-                end
-            elseif M.phase ~= "chase" then
+            -- Busting is automatic now (server-side, by distance + speed).
+            if M.phase ~= "chase" then
                 sleep = (M.role == "robber") and 100 or 0
             end
 
@@ -273,6 +315,11 @@ CreateThread(function()
                     local slow = kmh <= Config.BustMaxSpeedKmh
                     text(("%d km/h"):format(math.floor(kmh + 0.5)), 0.5, 0.058, 0.55, slow and 255 or 255, slow and 70 or 255, slow and 70 or 255)
                     if slow then text("TOO SLOW — THE POLICE CAN BUST YOU", 0.5, 0.098, 0.34, 255, 70, 70) end
+                    if M.veh ~= 0 and DoesEntityExist(M.veh) then
+                        local hp = math.max(0.0, math.min(GetVehicleEngineHealth(M.veh), GetVehicleBodyHealth(M.veh))) / 1000.0
+                        bar(0.5, 0.18, 0.16, 0.014, hp, hp > 0.35 and 90 or 255, hp > 0.35 and 220 or 70, hp > 0.35 and 120 or 70)
+                        text(("CAR %d%%"):format(math.floor(hp * 100)), 0.5, 0.19, 0.3)
+                    end
                 else
                     local rped = playerPed(M.robber)
                     if rped ~= 0 then
@@ -281,7 +328,7 @@ CreateThread(function()
                         text(("Robber %dm · %d km/h"):format(math.floor(d), math.floor(kmh + 0.5)), 0.5, 0.058, 0.4)
                         if M.role == "cop" and d <= Config.BustDistance then
                             if kmh <= Config.BustMaxSpeedKmh then
-                                text(("HOLD [%s] TO BUST"):format(Config.Keys.bust.label), 0.5, 0.098, 0.42, 90, 170, 255)
+                                text("BUSTING — KEEP THEM BOXED IN", 0.5, 0.098, 0.42, 90, 170, 255)
                             else
                                 text("Stop them to bust", 0.5, 0.098, 0.34, 200, 200, 200)
                             end
@@ -340,6 +387,26 @@ CreateThread(function()
             end
         end
         Wait(500)
+    end
+end)
+
+-- ── Wrecked getaway car ──────────────────────────────────────────────────────
+-- The robber's own client watches its car; a wreck during the chase = busted.
+
+CreateThread(function()
+    while true do
+        if M and M.role == "robber" and M.phase == "chase" and not M.wreckSent
+        and M.veh ~= 0 and DoesEntityExist(M.veh) and Config.VehicleDamage ~= false then
+            local v = M.veh
+            local engine, body = GetVehicleEngineHealth(v), GetVehicleBodyHealth(v)
+            if IsEntityDead(v) or engine <= (Config.WreckEngineHealth or 0.0) or body <= (Config.WreckBodyHealth or 0.0) then
+                M.wreckSent = true
+                TriggerServerEvent("spz-pursuit:wrecked")
+            end
+            Wait(250)
+        else
+            Wait(750)
+        end
     end
 end)
 

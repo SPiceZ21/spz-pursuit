@@ -13,8 +13,23 @@ Config.MaxRoomSize = 1 + Config.MaxCops + Config.MaxPilots
 -- ── Cars ────────────────────────────────────────────────────────────────────
 -- First entry is the default when a player never picks.
 Config.Cars = {
-    robber = { "sultan", "sultanrs", "kuruma", "buffalo", "elegy2", "jester", "comet2", "ruston" },
-    cop    = { "police", "police2", "police3", "police4", "sheriff", "sheriff2", "fbi" },
+    -- Gabz addon sports + super cars (gabz/gb_vehicles_*).
+    robber = {
+        "gbcomets2r", "gbsentinelgts", "gbargento2f", "gbcyphergts", "gbmilano", "gbmochi",
+        "gbnexusrr", "gbretinueloz", "gbromulus", "gbronin", "gbrumina", "gbschlagensp",
+        "gbschwartzers", "gbsolace", "gbtenfr", "gbvivantgrb",
+        "gb811s2", "gbbanshees", "gbcheetahs", "gbemerussb1", "gbprospero", "gbtempestafs",
+        "gbtr3s", "gbzeitgeist",
+    },
+    -- Gabz police fleet (gabz/gb_vehicles_pd_ems).
+    cop = {
+        "gbpolcomets2r", "gbpolbanshees", "gbpolsultanrsx", "gbpolargento7f", "gbpolcometcl",
+        "gbpolsentinelgts", "gbpoltr3s", "gbpolturismogt", "gbpoltahomagt", "gbpolprospero",
+        "gbpolclubxr", "gbpoldomgsx", "gbpolechelon", "gbpoleon", "gbpolesperta", "gbpolgresley",
+        "gbpolhedra", "gbpolimpaler", "gbpoladmiral", "gbpolstanier", "gbpolstarlight",
+        "gbpolsolace", "gbpolscoutgsx", "gbpolbisonhf", "gbpolbisonstx", "gbpolmojave",
+        "gbpolterrorizer", "gbpolsteedvan",
+    },
     pilot  = { "polmav" },
 }
 
@@ -45,19 +60,26 @@ Config.ChaseSec    = 300
 Config.Traffic     = true           -- ambient traffic in the match bucket (cover)
 
 -- ── Busting ─────────────────────────────────────────────────────────────────
--- A cop within BustDistance of a robber who is going BustMaxSpeedKmh or slower
--- holds the bust key; the bar fills over BustHoldSec. If the robber gets going
--- again, or every holding cop drops off, the bar drains.
-Config.BustMaxSpeedKmh = 5.0
-Config.BustDistance    = 10.0
-Config.BustHoldSec     = 10.0
-Config.BustDrainPerSec = 1.0        -- full bars per second when nobody is busting
+-- AUTOMATIC, no key: while any cop is within BustDistance of a robber going
+-- BustMaxSpeedKmh or slower, the bar fills (full in BustHoldSec). Otherwise it
+-- drains at BustDrainPerSec, so a robber who gets moving again claws it back
+-- gradually instead of it resetting instantly.
+Config.BustMaxSpeedKmh = 10.0
+Config.BustDistance    = 12.0
+Config.BustHoldSec     = 6.0        -- seconds of a stopped robber to fill the bar
+Config.BustDrainPerSec = 0.12       -- ~8 s to drain a full bar
 
 -- ── Keys (polled while in a match) ──────────────────────────────────────────
 Config.Keys = {
-    bust  = { control = 38,  label = "E" },    -- hold to bust
     ready = { control = 246, label = "Y" },    -- police: ready during setup
 }
+
+-- ── Vehicle damage ──────────────────────────────────────────────────────────
+-- Cars take real damage in a match (spz-vehfunc godmode stands down). When the
+-- robber's car is wrecked -- engine or body at/below this -- they are busted.
+Config.VehicleDamage     = true
+Config.WreckEngineHealth = 0.0      -- GTA engine health: 1000 new, <=0 dead
+Config.WreckBodyHealth   = 0.0
 
 -- ── Deaths ──────────────────────────────────────────────────────────────────
 Config.CopRespawnSec = 5            -- dead cop comes back at their spawn, new car

@@ -98,18 +98,24 @@ end
 
 local function noRoomMenu(invites)
     local options = {
-        { title = "Create room", description = "Host a pursuit and invite players", icon = "plus", iconColor = "#ff6200",
+        { title = "Join public lobby", description = "Jump into the busiest open lobby (or open one)", icon = "users", iconColor = "#ff6200",
+            onSelect = function() if call("quickJoin") then openLobby() end end },
+        { title = "Create new lobby", description = "Open a fresh public lobby", icon = "plus",
             onSelect = function() if call("create") then openLobby() end end },
     }
+    if #(invites or {}) > 0 then
+        options[#options + 1] = { title = "── Open lobbies ──", readOnly = true }
+    end
     for _, inv in ipairs(invites or {}) do
         options[#options + 1] = {
-            title = ("Join %s's room"):format(inv.host), description = ("%d player(s) in the room"):format(inv.size),
-            icon = "envelope-open-text",
+            title = ("%s's lobby%s"):format(inv.host, inv.invited and " · invited" or ""),
+            description = ("%d/%d players%s"):format(inv.size, inv.max or 0, inv.robber and " · robber taken" or " · robber open"),
+            icon = inv.invited and "envelope-open-text" or "door-open",
             onSelect = function() if call("join", inv.id) then openLobby() end end,
         }
     end
     options[#options + 1] = { title = "How it works", icon = "circle-info", readOnly = true,
-        description = "1 robber vs 1–10 cops (+ optional PD chopper). Robber starts in Pacific Standard; police set up, then chase. Stop the robber and hold E to bust." }
+        description = "1 robber vs 1–10 cops (+ optional PD chopper). Robber starts in Pacific Standard; police set up, then chase. Box the robber in under 10 km/h and the bust bar fills automatically." }
     lib.registerContext({ id = ROOM_MENU, title = "🚓 Hot Pursuit", options = options })
     lib.showContext(ROOM_MENU)
 end
@@ -148,10 +154,10 @@ local function roomMenu()
             disabled = not role,
             onSelect = function() call("ready"); openLobby() end,
         }
+        -- Public lobby: anyone in it can invite friends; only the host starts.
+        options[#options + 1] = { title = "Invite players", icon = "user-plus", arrow = true,
+            description = ("%d / %d in lobby"):format(c.total, Room.limits.size), onSelect = openInviteMenu }
         if Room.isHost then
-            options[#options + 1] = { title = "Invite players", icon = "user-plus", arrow = true,
-                description = ("%d / %d in room"):format(c.total, Room.limits.size), onSelect = openInviteMenu }
-
             local blocker
             if c.robber ~= 1 then blocker = "Need exactly 1 robber"
             elseif c.cop < Room.limits.minCops then blocker = "Need at least 1 cop"
@@ -189,11 +195,11 @@ local function roomMenu()
     end
 
     if Room.state == "lobby" then
-        options[#options + 1] = { title = "Leave room", icon = "right-from-bracket", iconColor = "#e05252",
+        options[#options + 1] = { title = "Leave lobby", icon = "right-from-bracket", iconColor = "#e05252",
             onSelect = function() if call("leave") then Room = nil end end }
     end
 
-    lib.registerContext({ id = ROOM_MENU, title = ("🚓 Hot Pursuit · Room %d"):format(Room.id), options = options })
+    lib.registerContext({ id = ROOM_MENU, title = ("🚓 Hot Pursuit · Public lobby %d"):format(Room.id), options = options })
     lib.showContext(ROOM_MENU)
 end
 

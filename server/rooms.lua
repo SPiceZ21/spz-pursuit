@@ -153,14 +153,22 @@ end
 
 lib.callback.register("spz-pursuit:state", function(src)
     local room = Pursuit.RoomOf(src)
-    local invites = {}
-    for roomId in pairs(Invites[src] or {}) do
-        local r = Rooms[roomId]
-        if r and r.state == "lobby" then
-            invites[#invites + 1] = { id = roomId, host = Pursuit.NameOf(r.host), size = count(r) }
+    -- Rooms are PUBLIC: every lobby is listed, invited ones first.
+    local lobbies = {}
+    for roomId, r in pairs(Rooms) do
+        if r.state == "lobby" and count(r) < Config.MaxRoomSize then
+            lobbies[#lobbies + 1] = {
+                id = roomId, host = Pursuit.NameOf(r.host), size = count(r),
+                max = Config.MaxRoomSize, robber = count(r, "robber") > 0,
+                invited = (Invites[src] and Invites[src][roomId]) and true or false,
+            }
         end
     end
-    return { room = room and Pursuit.RoomView(room, src) or nil, invites = invites }
+    table.sort(lobbies, function(a, b)
+        if a.invited ~= b.invited then return a.invited end
+        return a.size > b.size
+    end)
+    return { room = room and Pursuit.RoomView(room, src) or nil, invites = lobbies }
 end)
 
 lib.callback.register("spz-pursuit:create", function(src)
@@ -168,6 +176,37 @@ lib.callback.register("spz-pursuit:create", function(src)
     local b = busy(src)
     if b then return false, "You're " .. b end
     if not Pursuit.Profile(src) then return false, "Profile not ready" end
+
+    local room = { id = nextRoomId, host = src, state = "lobby", members = {} }
+    nextRoomId = nextRoomId + 1
+    Rooms[room.id] = room
+    addMember(room, src)
+    Pursuit.Broadcast(room)
+    return true
+end)
+
+local function joinRoom(src, room)
+    addMember(room, src)
+    for s in pairs(room.members) do
+        if s ~= src then notify(s, Pursuit.NameOf(src) .. " joined the lobby.", "success") end
+    end
+    Pursuit.Broadcast(room)
+end
+
+--- Public matchmaking: join the fullest open lobby, or open a new one.
+lib.callback.register("spz-pursuit:quickJoin", function(src)
+    if MemberRoom[src] then return false, "You're already in a lobby" end
+    local b = busy(src)
+    if b then return false, "You're " .. b end
+    if not Pursuit.Profile(src) then return false, "Profile not ready" end
+
+    local best
+    for _, r in pairs(Rooms) do
+        if r.state == "lobby" and count(r) < Config.MaxRoomSize and (not best or count(r) > count(best)) then
+            best = r
+        end
+    end
+    if best then joinRoom(src, best); return true end
 
     local room = { id = nextRoomId, host = src, state = "lobby", members = {} }
     nextRoomId = nextRoomId + 1
@@ -214,7 +253,6 @@ end)
 lib.callback.register("spz-pursuit:join", function(src, roomId)
     local room = Rooms[tonumber(roomId)]
     if not room or room.state ~= "lobby" then return false, "That room is gone or already playing" end
-    if not (Invites[src] and Invites[src][room.id]) then return false, "You weren't invited" end
     if MemberRoom[src] then return false, "You're already in a room" end
     local b = busy(src)
     if b then return false, "You're " .. b end
