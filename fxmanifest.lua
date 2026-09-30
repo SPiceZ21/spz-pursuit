@@ -3,7 +3,7 @@ game 'gta5'
 
 name 'spz-pursuit'
 description 'SPiceZ Minigame — Hot Pursuit. Host a room, pick roles (1 robber, 1-10 cops, optional PD chopper), cars and tuner setups; robber breaks out of Pacific Standard, police set up then chase; stop the robber and hold to bust.'
-version '1.0.0'
+version '1.1.0'
 author 'SPiceZ-Core'
 lua54 'yes'
 
