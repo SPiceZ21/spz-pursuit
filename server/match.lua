@@ -66,6 +66,12 @@ function Pursuit.StartMatch(room)
         bucket = exports["spz-core"]:CreateBucket("pursuit")
     end
     SetRoutingBucketPopulationEnabled(bucket, Config.Traffic == true)
+    -- spz-core buckets default to STRICT lockdown, which deletes every car a
+    -- client creates -- the match cars were spawned client-side and vanished.
+    -- relaxed = client script entities allowed; inactive also lets traffic in.
+    if bucket ~= 0 then
+        SetRoutingBucketEntityLockdownMode(bucket, Config.Traffic and "inactive" or "relaxed")
+    end
 
     local now = GetGameTimer()
     local match = {
@@ -207,6 +213,19 @@ function Pursuit.OnMemberGone(room, src)
     for _, q in pairs(match.players) do if q.role ~= "robber" then police = police + 1 end end
     if police == 0 then endMatch(room, "robber", "the police left") end
 end
+
+-- Player chose "Leave minigame": send them home, then drop them from the room
+-- (which runs OnMemberGone -> robber leaving ends it, last cop leaving ends it).
+RegisterNetEvent("spz-pursuit:leaveMatch", function()
+    local src = source
+    local room = Pursuit.RoomOf(src)
+    if not room or room.state ~= "match" or not room.match or not room.match.players[src] then return end
+    TriggerClientEvent("spz-pursuit:finish", src)
+    SetTimeout(1500, function()
+        if GetPlayerName(src) then setBucket(src, 0); setMatchState(src, false) end
+    end)
+    Pursuit.RemoveMember(src, "left the match")
+end)
 
 -- ── Client reports ───────────────────────────────────────────────────────────
 

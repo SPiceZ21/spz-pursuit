@@ -123,6 +123,11 @@ RegisterNetEvent("spz-pursuit:begin", function(d)
         back = GetEntityCoords(ped), backHeading = GetEntityHeading(ped),
     }
 
+    -- Tells spz-races to hide its "[E] JOIN RACE" pill and ignore E, which
+    -- would otherwise fire alongside HOLD E TO BUST.
+    LocalPlayer.state:set("inMinigame", "Hot Pursuit", false)
+    TriggerEvent("spz:minigameChanged")
+
     fadeOut()
     -- Drops the phasing exclusions spz-core put on this ped, so contact works.
     SetEntityCollision(ped, true, true)
@@ -132,7 +137,7 @@ RegisterNetEvent("spz-pursuit:begin", function(d)
     DoScreenFadeIn(600)
 
     if M.role == "robber" then
-        Pursuit.Notify("You're inside Pacific Standard. The police are setting up — when they're ready you're released. Get to your car and lose them.", "inform", "ROBBER")
+        Pursuit.Notify("Wait for the cops to get ready — you're released the moment they are. Then get in your car and lose them.", "inform", "ROBBER")
     elseif M.role == "cop" then
         Pursuit.Notify(("Set up your position, then press [%s] when ready."):format(Config.Keys.ready.label), "inform", "POLICE")
     else
@@ -180,6 +185,8 @@ local function cleanup()
     local ped = PlayerPedId()
     FreezeEntityPosition(ped, false)
     lib.hideTextUI()
+    LocalPlayer.state:set("inMinigame", false, false)
+    TriggerEvent("spz:minigameChanged")
     M = nil
 end
 
@@ -252,7 +259,7 @@ CreateThread(function()
             if M.phase == "setup" then
                 local line
                 if M.role == "robber" then
-                    line = ("Held in the bank — police ready %d/%d"):format(M.ready, M.police)
+                    line = ("Wait till the cops get ready — %d/%d ready"):format(M.ready, M.police)
                 elseif M.sentReady then
                     line = ("Ready — waiting for the others (%d/%d)"):format(M.ready, M.police)
                 else
@@ -363,6 +370,12 @@ CreateThread(function()
         end
         Wait(500)
     end
+end)
+
+-- Esc menu / radial "Leave minigame". The server removes us from the room and
+-- sends spz-pursuit:finish back, which does the actual teleport home.
+AddEventHandler("spz:leaveMinigame", function()
+    if M then TriggerServerEvent("spz-pursuit:leaveMatch") end
 end)
 
 AddEventHandler("onResourceStop", function(res)
