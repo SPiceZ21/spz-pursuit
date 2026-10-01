@@ -202,12 +202,21 @@ RegisterNetEvent("spz-pursuit:countdown", function(n)
     playClip("countdown")
 end)
 
-RegisterNetEvent("spz-pursuit:go", function()
+RegisterNetEvent("spz-pursuit:go", function(d)
     if not M then return end
     M.phase = "chase"
+    M.graceEnd = GetGameTimer() + ((d and d.headStart) or 0) * 1000
     if M.role == "robber" then
-        FreezeEntityPosition(PlayerPedId(), false)
-        bigMessage("~r~GO!", "Get to your car and lose the police")
+        local ped = PlayerPedId()
+        FreezeEntityPosition(ped, false)
+        -- Police are all ready: straight into the getaway car, engine running.
+        if M.veh ~= 0 and DoesEntityExist(M.veh) then
+            SetVehicleDoorsLockedForPlayer(M.veh, PlayerId(), false)
+            TaskWarpPedIntoVehicle(ped, M.veh, -1)
+            SetVehicleEngineOn(M.veh, true, true, false)
+            SetVehicleUndriveable(M.veh, false)
+        end
+        bigMessage("~r~GO!", ("%ds head start — lose the police"):format((d and d.headStart) or 0))
         playClip("go")
     else
         bigMessage("~b~ROBBER IS MOVING", "Chase them down")
@@ -387,6 +396,75 @@ CreateThread(function()
             end
         end
         Wait(500)
+    end
+end)
+
+-- ── Head start: police kept out of the robber's radius ──────────────────────
+
+CreateThread(function()
+    while true do
+        local now = GetGameTimer()
+        if M and M.phase == "chase" and M.graceEnd and now < M.graceEnd then
+            local rped = playerPed(M.robber)
+            local R = Config.HeadStartRadius or 60.0
+            local left = math.ceil((M.graceEnd - now) / 1000)
+            if rped ~= 0 then
+                local rc = GetEntityCoords(rped)
+                if M.role ~= "robber" then
+                    -- Red wall around the robber, so cops can see the line.
+                    DrawMarker(1, rc.x, rc.y, rc.z - 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        R * 2.0, R * 2.0, 60.0, 255, 40, 40, 45, false, false, 2, false, nil, nil, false)
+                    local ped = PlayerPedId()
+                    local veh = GetVehiclePedIsIn(ped, false)
+                    local ent = veh ~= 0 and veh or ped
+                    local me = GetEntityCoords(ent)
+                    local dx, dy = me.x - rc.x, me.y - rc.y
+                    local d = math.sqrt(dx * dx + dy * dy)
+                    if d < R and M.role == "cop" then
+                        -- Shove them back out along the line from the robber.
+                        if d < 0.1 then dx, dy, d = 1.0, 0.0, 1.0 end
+                        local nx, ny = dx / d, dy / d
+                        local v = GetEntityVelocity(ent)
+                        SetEntityVelocity(ent, nx * 18.0, ny * 18.0, v.z)
+                    end
+                    text(("HEAD START %ds — STAY %dm BACK"):format(left, math.floor(R)), 0.5, 0.098, 0.42, 255, 80, 80)
+                else
+                    text(("HEAD START %ds — police can't close in"):format(left), 0.5, 0.135, 0.36, 120, 255, 140)
+                end
+            end
+            Wait(0)
+        else
+            Wait(250)
+        end
+    end
+end)
+
+-- ── Real damage, every frame ─────────────────────────────────────────────────
+-- vMenu's Vehicle God Mode (everyone has vMenu.VehicleOptions.All) re-protects
+-- the player's car every frame, which beat the one-time reset at spawn -- so
+-- cars never took damage and the robber could never be wrecked. Undo it just as
+-- often, on whatever car we're driving in the match.
+
+CreateThread(function()
+    while true do
+        if M and M.phase ~= "over" and Config.VehicleDamage ~= false then
+            local ped = PlayerPedId()
+            local veh = GetVehiclePedIsIn(ped, false)
+            if veh == 0 and M.veh ~= 0 and DoesEntityExist(M.veh) then veh = M.veh end
+            if veh ~= 0 then
+                SetEntityInvincible(veh, false)
+                SetEntityCanBeDamaged(veh, true)
+                SetEntityProofs(veh, false, false, false, false, false, false, false, false)
+                SetVehicleCanBeVisiblyDamaged(veh, true)
+                SetVehicleStrong(veh, false)
+                SetVehicleTyresCanBurst(veh, true)
+                SetVehicleWheelsCanBreak(veh, true)
+                SetVehicleEngineCanDegrade(veh, true)
+            end
+            Wait(0)
+        else
+            Wait(500)
+        end
     end
 end)
 

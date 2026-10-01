@@ -139,7 +139,10 @@ local function startChase(room)
         if room.match ~= match or match.phase ~= "countdown" then return end
         match.phase = "chase"
         match.chaseEndsAt = GetGameTimer() + Config.ChaseSec * 1000
-        each(match, function(src) TriggerClientEvent("spz-pursuit:go", src) end)
+        match.graceUntil  = GetGameTimer() + (Config.HeadStartSec or 0) * 1000
+        each(match, function(src)
+            TriggerClientEvent("spz-pursuit:go", src, { headStart = Config.HeadStartSec or 0 })
+        end)
         log(("room %d: chase started"):format(room.id))
     end)
 end
@@ -284,6 +287,8 @@ CreateThread(function()
         if broadcast then lastBroadcast = now end
 
         for _, room in pairs(Rooms) do
+          -- One room erroring must never kill this loop for every match.
+          local ok, err = pcall(function()
             local match = room.match
             if room.state == "match" and match and match.phase ~= "over" then
                 -- Setup → chase when every cop / pilot is ready, or time's up.
@@ -303,7 +308,8 @@ CreateThread(function()
                     local speed = speedKmh(match.robber)
                     local busting = false
                     -- Automatic: any living cop close enough while the robber is slow.
-                    if speed <= Config.BustMaxSpeedKmh then
+                    -- No busting during the robber's head start.
+                    if now >= (match.graceUntil or 0) and speed <= Config.BustMaxSpeedKmh then
                         for src, p in pairs(match.players) do
                             if p.role == "cop" and dist(src, match.robber) <= Config.BustDistance then busting = true; break end
                         end
@@ -323,7 +329,12 @@ CreateThread(function()
                 end
 
                 if broadcast and match.phase ~= "over" then
-                    local endsAt = match.phase == "setup" and match.setupEndsAt or match.chaseEndsAt
+                    -- "countdown" has no end time of its own (chaseEndsAt is set
+                    -- at GO). A nil here used to throw and kill the whole tick:
+                    -- no bust bar, no busting, no escape timer.
+                    local endsAt = (match.phase == "chase" and match.chaseEndsAt)
+                        or (match.phase == "setup" and match.setupEndsAt)
+                        or now
                     local state = {
                         phase = match.phase,
                         remain = math.max(0, math.ceil((endsAt - now) / 1000)),
@@ -333,6 +344,8 @@ CreateThread(function()
                     each(match, function(src) TriggerClientEvent("spz-pursuit:state", src, state) end)
                 end
             end
+          end)
+          if not ok then log(("room %s tick error: %s"):format(tostring(room.id), tostring(err))) end
         end
     end
 end)

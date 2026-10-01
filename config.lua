@@ -59,6 +59,13 @@ Config.ChaseSec    = 300
 
 Config.Traffic     = true           -- ambient traffic in the match bucket (cover)
 
+-- ── Head start ──────────────────────────────────────────────────────────────
+-- When every cop has pressed ready, the robber is put straight into the
+-- getaway car. For HeadStartSec after GO, police can't come within
+-- HeadStartRadius of the robber (they're pushed back out) and can't bust.
+Config.HeadStartSec    = 15
+Config.HeadStartRadius = 60.0
+
 -- ── Busting ─────────────────────────────────────────────────────────────────
 -- AUTOMATIC, no key: while any cop is within BustDistance of a robber going
 -- BustMaxSpeedKmh or slower, the bar fills (full in BustHoldSec). Otherwise it
