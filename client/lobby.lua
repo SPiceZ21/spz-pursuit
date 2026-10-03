@@ -1,8 +1,9 @@
 -- client/lobby.lua — room menus (ox_lib context)
 --
 -- No room:  Create room · pending invites
--- In room:  role · car · customise · ready · invite · start (host) · members
---           Host can set anyone's role or remove them from a member's row.
+-- In room:  cars (one per role) · ready · invite · members
+--           Roles are dealt at random by the server once everyone is ready;
+--           the match then starts on its own. Host can remove members.
 -- The server pushes the room on every change; an open room menu redraws.
 
 local Room = nil          -- latest room view from the server
@@ -21,36 +22,10 @@ local openLobby
 
 -- ── Submenus ─────────────────────────────────────────────────────────────────
 
-local function roleOptions(target, current)
-    local c, l = Room.counts, Room.limits
-    local function opt(role, label, used, max)
-        local full = used >= max and current ~= role
-        return {
-            title = label, icon = ROLE_ICON[role],
-            description = ("%d / %d%s"):format(used, max, current == role and " · current" or ""),
-            disabled = full,
-            onSelect = function() call("setRole", role, target); openLobby() end,
-        }
-    end
-    return {
-        opt("robber", "Robber", c.robber, 1),
-        opt("cop", "Cop", c.cop, l.cops),
-        opt("pilot", "PD Chopper (optional)", c.pilot, l.pilots),
-        { title = "No role", icon = "xmark", onSelect = function() call("setRole", "none", target); openLobby() end },
-    }
-end
+local ROLES = { "robber", "cop", "pilot" }
 
-local function openRoleMenu(target, current, name)
-    lib.registerContext({
-        id = "spz_pursuit_role", title = name and ("Role · " .. name) or "Pick your role",
-        menu = ROOM_MENU, options = roleOptions(target, current),
-    })
-    lib.showContext("spz_pursuit_role")
-end
-
-local function openCarMenu()
+local function openCarMenu(role)
     local me = Room.me
-    local role = me.role
     local options = {}
     for _, model in ipairs(Room.cars[role] or {}) do
         local picked = me.cars[role] == model
@@ -61,6 +36,11 @@ local function openCarMenu()
             onSelect = function() call("setCar", role, model); openLobby() end,
         }
     end
+    options[#options + 1] = {
+        title = "Customize " .. Pursuit.CarLabel(me.cars[role]), icon = "wrench",
+        description = me.tuned[me.cars[role]] and "Tuned · open the tuner again" or "Open the tuner on this car",
+        onSelect = function() Pursuit.Customize(me.cars[role], openLobby) end,
+    }
     lib.registerContext({ id = "spz_pursuit_car", title = "Car · " .. Pursuit.RoleLabel(role), menu = ROOM_MENU, options = options })
     lib.showContext("spz_pursuit_car")
 end
@@ -85,8 +65,6 @@ local function openMemberMenu(m)
     lib.registerContext({
         id = "spz_pursuit_member", title = m.name, menu = ROOM_MENU,
         options = {
-            { title = "Set role", description = Pursuit.RoleLabel(m.role), icon = "user-tag", arrow = true,
-                onSelect = function() openRoleMenu(m.src, m.role, m.name) end },
             { title = "Remove from room", icon = "user-xmark", iconColor = "#e05252",
                 onSelect = function() call("kick", m.src); openLobby() end },
         },
@@ -109,76 +87,47 @@ local function noRoomMenu(invites)
     for _, inv in ipairs(invites or {}) do
         options[#options + 1] = {
             title = ("%s's lobby%s"):format(inv.host, inv.invited and " · invited" or ""),
-            description = ("%d/%d players%s"):format(inv.size, inv.max or 0, inv.robber and " · robber taken" or " · robber open"),
+            description = ("%d/%d players%s"):format(inv.size, inv.max or 0, inv.size > Config.ChopperAbove and " · chopper on" or ""),
             icon = inv.invited and "envelope-open-text" or "door-open",
             onSelect = function() if call("join", inv.id) then openLobby() end end,
         }
     end
     options[#options + 1] = { title = "How it works", icon = "circle-info", readOnly = true,
-        description = "1 robber vs 1–10 cops (+ optional PD chopper). Robber starts in Pacific Standard; police set up, then chase. Box the robber in under 10 km/h and the bust bar fills automatically." }
+        description = "Roles are random: 1 robber, the rest cops (6+ players: one flies the PD chopper). Everyone readies up and it starts by itself. Robber starts in Pacific Standard; police set up, then chase. Box the robber in under 10 km/h and the bust bar fills automatically." }
     lib.registerContext({ id = ROOM_MENU, title = "🚓 Hot Pursuit", options = options })
     lib.showContext(ROOM_MENU)
 end
 
 local function roomMenu()
     local me, c = Room.me, Room.counts
-    local role = me.role
     local options = {}
 
     if Room.state == "match" then
         options[#options + 1] = { title = "Match in progress", icon = "flag-checkered", readOnly = true }
     else
-        options[#options + 1] = {
-            title = "Role: " .. Pursuit.RoleLabel(role), icon = ROLE_ICON[role] or "user-tag", arrow = true,
-            description = ("Robber %d/1 · Cops %d/%d · Chopper %d/%d"):format(c.robber, c.cop, Room.limits.cops, c.pilot, Room.limits.pilots),
-            onSelect = function() openRoleMenu(nil, role) end,
-        }
-        options[#options + 1] = {
-            title = "Car: " .. (role and Pursuit.CarLabel(me.cars[role]) or "—"), icon = "car", arrow = true,
-            disabled = not role,
-            onSelect = openCarMenu,
-        }
-        options[#options + 1] = {
-            title = "Customize car", icon = "wrench",
-            description = role and (me.tuned[me.cars[role]] and "Tuned · open the tuner again" or "Open the tuner on your car") or "Pick a role first",
-            disabled = not role,
-            onSelect = function()
-                local model = me.cars[role]
-                Pursuit.Customize(model, openLobby)
-            end,
-        }
+        for _, r in ipairs(ROLES) do
+            options[#options + 1] = {
+                title = ("%s car: %s"):format(Pursuit.RoleLabel(r), Pursuit.CarLabel(me.cars[r])),
+                icon = ROLE_ICON[r], arrow = true,
+                description = me.tuned[me.cars[r]] and "Tuned" or "Used if you're dealt this role",
+                onSelect = function() openCarMenu(r) end,
+            }
+        end
         options[#options + 1] = {
             title = me.ready and "Ready ✔" or "Ready up", icon = me.ready and "circle-check" or "circle",
             iconColor = me.ready and "#3dbf7a" or nil,
-            description = me.ready and "Tap to un-ready" or "Tap when you're set",
-            disabled = not role,
+            description = Room.countdown and "Starting — roles are being dealt"
+                or (me.ready and "Tap to un-ready" or ("Starts when all %d are ready (min %d)"):format(c.total, 1 + Room.limits.minCops)),
             onSelect = function() call("ready"); openLobby() end,
         }
-        -- Public lobby: anyone in it can invite friends; only the host starts.
+        -- Public lobby: anyone in it can invite friends.
         options[#options + 1] = { title = "Invite players", icon = "user-plus", arrow = true,
             description = ("%d / %d in lobby"):format(c.total, Room.limits.size), onSelect = openInviteMenu }
-        if Room.isHost then
-            local blocker
-            if c.robber ~= 1 then blocker = "Need exactly 1 robber"
-            elseif c.cop < Room.limits.minCops then blocker = "Need at least 1 cop"
-            else
-                for _, m in ipairs(Room.members) do
-                    if not m.role then blocker = m.name .. " has no role"; break end
-                    if not m.ready then blocker = m.name .. " isn't ready"; break end
-                end
-            end
-            options[#options + 1] = {
-                title = "Start match", icon = "play", iconColor = not blocker and "#ff6200" or nil,
-                description = blocker or "Everyone's ready — go",
-                disabled = blocker ~= nil,
-                onSelect = function() call("start") end,
-            }
-        end
     end
 
     options[#options + 1] = { title = ("── Players %d/%d ──"):format(c.total, Room.limits.size), readOnly = true }
     for _, m in ipairs(Room.members) do
-        local line = ("%s%s"):format(Pursuit.RoleLabel(m.role), m.car and (" · " .. Pursuit.CarLabel(m.car)) or "")
+        local line = m.role and Pursuit.RoleLabel(m.role) or "Role dealt at start"
         local opt = {
             title = (m.host and "★ " or "") .. m.name .. (m.me and " (you)" or ""),
             description = line .. (m.ready and " · ready" or ""),

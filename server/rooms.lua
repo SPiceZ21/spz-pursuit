@@ -1,10 +1,11 @@
 -- server/rooms.lua — Hot Pursuit rooms (the soft launch)
 --
--- A host creates a room and invites players. In the room everyone picks a role
--- (robber / cop / PD chopper), a car for it, customises it in the tuner, and
--- presses ready. The host starts the match once the line-up is valid and every
--- member is ready. When the match ends the room comes back to the lobby, so the
--- same group can go again.
+-- A host creates a room and invites players. In the room everyone picks a car
+-- for each role, customises it in the tuner, and presses ready. Roles are NOT
+-- picked: once every member is ready the match starts by itself after a short
+-- countdown and the server deals roles at random (1 robber, a PD chopper pilot
+-- when there are more than Config.ChopperAbove players, the rest cops). When
+-- the match ends the room comes back to the lobby, so the group can go again.
 
 Pursuit = Pursuit or {}
 Rooms   = {}            -- [roomId] = room
@@ -80,6 +81,7 @@ function Pursuit.RoomView(room, viewer)
     return {
         id = room.id,
         state = room.state,
+        countdown = room.countdown and true or false,
         host = room.host,
         isHost = viewer == room.host,
         members = members,
@@ -103,14 +105,72 @@ end
 
 --- Why the room can't start yet, or nil.
 function Pursuit.StartBlocker(room)
-    if count(room, "robber") ~= 1 then return "Need exactly 1 robber" end
-    local cops = count(room, "cop")
-    if cops < Config.MinCops then return ("Need at least %d cop"):format(Config.MinCops) end
+    if count(room) < 1 + Config.MinCops then return ("Need at least %d players"):format(1 + Config.MinCops) end
     for _, m in pairs(room.members) do
-        if not m.role then return m.name .. " hasn't picked a role" end
         if not m.ready then return m.name .. " isn't ready" end
     end
     return nil
+end
+
+--- Deal roles at random: 1 robber, 1 chopper pilot when the room has more than
+--- Config.ChopperAbove players, everyone else a cop.
+function Pursuit.AssignRoles(room)
+    local pool = {}
+    for src, m in pairs(room.members) do m.role = nil; pool[#pool + 1] = src end
+    for i = #pool, 2, -1 do
+        local j = math.random(i)
+        pool[i], pool[j] = pool[j], pool[i]
+    end
+    local pilots = (#pool > Config.ChopperAbove) and math.min(Config.MaxPilots, 1) or 0
+    for i, src in ipairs(pool) do
+        local m = room.members[src]
+        if i == 1 then m.role = "robber"
+        elseif i <= 1 + pilots then m.role = "pilot"
+        else m.role = "cop" end
+    end
+end
+
+-- ── Auto start ───────────────────────────────────────────────────────────────
+-- Everyone ready -> countdown -> roles dealt -> match. Any change (un-ready,
+-- join, leave) bumps room.startToken and cancels a running countdown.
+
+local function startProblem(room)
+    local blocked = Pursuit.StartBlocker(room)
+    if blocked then return blocked end
+    for s, m in pairs(room.members) do
+        local b = busy(s)
+        if b then return ("%s is %s"):format(m.name, b) end
+        if Pursuit.InPreview(s) then return m.name .. " is still customising" end
+    end
+    return nil
+end
+
+function Pursuit.CheckAutoStart(room)
+    room.startToken = (room.startToken or 0) + 1
+    if room.state ~= "lobby" or startProblem(room) then
+        if room.countdown then
+            room.countdown = nil
+            for s in pairs(room.members) do notify(s, "Countdown cancelled.", "warning") end
+        end
+        return
+    end
+    local token = room.startToken
+    room.countdown = true
+    for s in pairs(room.members) do
+        notify(s, ("Everyone's ready — roles are dealt in %ds."):format(Config.AutoStartDelay), "success")
+    end
+    SetTimeout(Config.AutoStartDelay * 1000, function()
+        if Rooms[room.id] ~= room or room.startToken ~= token or room.state ~= "lobby" then return end
+        room.countdown = nil
+        local why = startProblem(room)
+        if why then
+            for s in pairs(room.members) do notify(s, "Start cancelled: " .. why, "warning") end
+            Pursuit.Broadcast(room)
+            return
+        end
+        Pursuit.AssignRoles(room)
+        Pursuit.StartMatch(room)
+    end)
 end
 
 -- ── Membership ───────────────────────────────────────────────────────────────
@@ -139,6 +199,7 @@ function Pursuit.RemoveMember(src, why)
         return
     end
 
+    if room.state == "lobby" then Pursuit.CheckAutoStart(room) end
     if room.host == src then
         room.host = next(room.members)
         notify(room.host, "You are now the room host.", "inform")
@@ -190,6 +251,7 @@ local function joinRoom(src, room)
     for s in pairs(room.members) do
         if s ~= src then notify(s, Pursuit.NameOf(src) .. " joined the lobby.", "success") end
     end
+    Pursuit.CheckAutoStart(room)
     Pursuit.Broadcast(room)
 end
 
@@ -262,6 +324,7 @@ lib.callback.register("spz-pursuit:join", function(src, roomId)
     for s in pairs(room.members) do
         if s ~= src then notify(s, Pursuit.NameOf(src) .. " joined the room.", "success") end
     end
+    Pursuit.CheckAutoStart(room)
     Pursuit.Broadcast(room)
     return true
 end)
@@ -277,29 +340,6 @@ lib.callback.register("spz-pursuit:kick", function(src, target)
     return true
 end)
 
---- Pick a role for yourself, or (host) for someone else.
-lib.callback.register("spz-pursuit:setRole", function(src, role, target)
-    local room = Pursuit.RoomOf(src)
-    if not room or room.state ~= "lobby" then return false, "Not in a lobby" end
-    target = tonumber(target) or src
-    if target ~= src and room.host ~= src then return false, "Only the host can set other players' roles" end
-    local m = room.members[target]
-    if not m then return false end
-    if role == "none" then role = nil end
-    if role ~= nil and not ROLES[role] then return false, "Unknown role" end
-
-    if role and m.role ~= role then
-        if role == "robber" and count(room, "robber") >= 1 then return false, "There's already a robber" end
-        if role == "cop" and count(room, "cop") >= Config.MaxCops then return false, "Cop slots are full" end
-        if role == "pilot" and count(room, "pilot") >= Config.MaxPilots then return false, "The chopper is taken" end
-    end
-
-    m.role = role
-    m.ready = false
-    Pursuit.Broadcast(room)
-    return true
-end)
-
 lib.callback.register("spz-pursuit:setCar", function(src, role, model)
     local room = Pursuit.RoomOf(src)
     local m = room and room.members[src]
@@ -307,6 +347,7 @@ lib.callback.register("spz-pursuit:setCar", function(src, role, model)
     if not ROLES[role] or not inList(Config.Cars[role], model) then return false, "Not an available car" end
     m.cars[role] = model
     m.ready = false
+    Pursuit.CheckAutoStart(room)
     Pursuit.Broadcast(room)
     return true
 end)
@@ -320,6 +361,7 @@ lib.callback.register("spz-pursuit:savePreset", function(src, model, props)
     if not allowed then return false end
     m.presets[model] = props
     m.ready = false
+    Pursuit.CheckAutoStart(room)
     Pursuit.Broadcast(room)
     return true
 end)
@@ -328,24 +370,9 @@ lib.callback.register("spz-pursuit:ready", function(src)
     local room = Pursuit.RoomOf(src)
     local m = room and room.members[src]
     if not m or room.state ~= "lobby" then return false end
-    if not m.role then return false, "Pick a role first" end
     m.ready = not m.ready
+    Pursuit.CheckAutoStart(room)
     Pursuit.Broadcast(room)
-    return true
-end)
-
-lib.callback.register("spz-pursuit:start", function(src)
-    local room = Pursuit.RoomOf(src)
-    if not room or room.host ~= src then return false, "Only the host can start" end
-    if room.state ~= "lobby" then return false, "Already playing" end
-    local blocked = Pursuit.StartBlocker(room)
-    if blocked then return false, blocked end
-    for s, m in pairs(room.members) do
-        local b = busy(s)
-        if b then return false, ("%s is %s"):format(m.name, b) end
-        if Pursuit.InPreview(s) then return false, m.name .. " is still customising" end
-    end
-    Pursuit.StartMatch(room)
     return true
 end)
 
@@ -380,6 +407,7 @@ lib.callback.register("spz-pursuit:previewBucket", function(src, on)
     Preview[src] = nil
     exports["spz-core"]:AssignPlayerToBucket(src, p.back or 0)
     pcall(function() exports["spz-core"]:DeleteBucket(p.bucket) end)
+    if room then Pursuit.CheckAutoStart(room); Pursuit.Broadcast(room) end
     return true
 end)
 
@@ -396,6 +424,7 @@ function Pursuit.BackToLobby(room)
     room.state = "lobby"
     room.match = nil
     unreadyAll(room)
+    for _, m in pairs(room.members) do m.role = nil end
     Pursuit.Broadcast(room)
 end
 

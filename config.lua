@@ -7,7 +7,9 @@ Config.Command = "pursuit"          -- /pursuit opens the room menu (also radial
 -- Picked by the players in the room (soft launch). The host can reassign.
 Config.MaxCops   = 10
 Config.MinCops   = 1
-Config.MaxPilots = 1                -- PD chopper, optional
+Config.MaxPilots = 1                -- PD chopper
+Config.ChopperAbove = 5             -- more players than this -> one is dealt the chopper
+Config.AutoStartDelay = 5           -- seconds after everyone is ready before roles are dealt
 Config.MaxRoomSize = 1 + Config.MaxCops + Config.MaxPilots
 
 -- ── Cars ────────────────────────────────────────────────────────────────────
