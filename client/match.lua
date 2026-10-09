@@ -100,13 +100,49 @@ local function spawnRobber()
 
     M.veh = Pursuit.SpawnCar(M.model, car, M.preset)
     if M.veh ~= 0 then
-        -- The getaway car is the robber's alone.
+        -- The getaway car is the robber's alone, and stays locked (to them
+        -- too) until GO, so it can't be taken early.
         SetVehicleDoorsLockedForAllPlayers(M.veh, true)
-        SetVehicleDoorsLockedForPlayer(M.veh, PlayerId(), false)
         SetVehicleEngineOn(M.veh, false, true, true)
     end
-    FreezeEntityPosition(ped, true)   -- held in the bank until the police are set
+    -- Free to move, but the bank doors are shut until GO (see the hold thread).
+    M.holdInterior, M.lastInside = nil, nil
 end
+
+-- ── Setup: robber walks around inside the bank, can't leave it ──────────────
+CreateThread(function()
+    while true do
+        if M and M.phase == "setup" and M.role == "robber" then
+            local ped = PlayerPedId()
+            local pos = GetEntityCoords(ped)
+            local int = GetInteriorFromEntity(ped)
+            if not M.holdInterior and int ~= 0 then M.holdInterior = int end
+
+            local inside
+            if M.holdInterior then
+                inside = (int == M.holdInterior)
+            else
+                inside = #(pos - vector3(M.spawn.x, M.spawn.y, M.spawn.z)) <= (Config.BankHoldRadius or 9.0)
+            end
+
+            if inside then
+                M.lastInside = pos
+            elseif M.lastInside then
+                SetEntityCoords(ped, M.lastInside.x, M.lastInside.y, M.lastInside.z - 0.95, false, false, false, false)
+                SetEntityVelocity(ped, 0.0, 0.0, 0.0)
+            end
+            if not inside or IsPedTryingToEnterALockedVehicle(ped) then
+                M.doorMsgUntil = GetGameTimer() + 2500
+            end
+            if M.doorMsgUntil and GetGameTimer() < M.doorMsgUntil then
+                text("THE DOORS ARE LOCKED UNTIL THE POLICE ARE READY", 0.5, 0.135, 0.38, 255, 80, 80)
+            end
+            Wait(0)
+        else
+            Wait(300)
+        end
+    end
+end)
 
 
 -- Countdown / GO clips from spz-raceUI (ui/public/aud), game audio as fallback.
@@ -421,11 +457,21 @@ CreateThread(function()
                     local dx, dy = me.x - rc.x, me.y - rc.y
                     local d = math.sqrt(dx * dx + dy * dy)
                     if d < R and M.role == "cop" then
-                        -- Shove them back out along the line from the robber.
+                        -- Invisible wall: cancel only the speed TOWARD the
+                        -- robber, keep the sideways part, so the cop slides
+                        -- along the edge instead of being thrown. Someone who
+                        -- starts inside (robber drove at them) is eased out.
                         if d < 0.1 then dx, dy, d = 1.0, 0.0, 1.0 end
                         local nx, ny = dx / d, dy / d
                         local v = GetEntityVelocity(ent)
-                        SetEntityVelocity(ent, nx * 18.0, ny * 18.0, v.z)
+                        local radial = v.x * nx + v.y * ny          -- + = moving away
+                        local vx, vy = v.x, v.y
+                        if radial < 0.0 then vx, vy = vx - radial * nx, vy - radial * ny end
+                        if d < R - 4.0 then
+                            local out = math.min(6.0, (R - d) * 0.5)   -- gentle, never a launch
+                            vx, vy = vx + nx * out * 0.1, vy + ny * out * 0.1
+                        end
+                        SetEntityVelocity(ent, vx, vy, v.z)
                     end
                     text(("HEAD START %ds — STAY %dm BACK"):format(left, math.floor(R)), 0.5, 0.098, 0.42, 255, 80, 80)
                 else

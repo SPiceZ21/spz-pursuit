@@ -57,16 +57,22 @@ Config.PilotSpawn = vec4(189.21, 228.56, 143.56, 210.19)
 -- ready. Starts the chase when every cop/pilot is ready, or when this runs out.
 Config.SetupMaxSec = 120
 -- CHASE: the robber wins by not being busted before this runs out.
-Config.ChaseSec    = 300
+Config.ChaseSec    = 480          -- 8:00
 
 Config.Traffic     = true           -- ambient traffic in the match bucket (cover)
 
 -- ── Head start ──────────────────────────────────────────────────────────────
 -- When every cop has pressed ready, the robber is put straight into the
 -- getaway car. For HeadStartSec after GO, police can't come within
--- HeadStartRadius of the robber (they're pushed back out) and can't bust.
-Config.HeadStartSec    = 15
-Config.HeadStartRadius = 60.0
+-- HeadStartRadius of the robber (an invisible wall: their speed toward the
+-- robber is cancelled at the edge, nobody gets thrown) and can't bust.
+Config.HeadStartSec    = 8
+Config.HeadStartRadius = 40.0
+
+-- During setup the robber walks free inside the bank, but the doors are shut:
+-- stepping out of the bank interior puts them back at their last spot inside.
+-- BankHoldRadius is the fallback fence if the interior is not detected.
+Config.BankHoldRadius  = 9.0
 
 -- ── Busting ─────────────────────────────────────────────────────────────────
 -- AUTOMATIC, no key: while any cop is within BustDistance of a robber going

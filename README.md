@@ -16,13 +16,16 @@
    The host presses **Start match** once there's exactly 1 robber, at least 1 cop, and
    everyone is ready.
 3. **Setup.** Everyone moves to a private bucket at Pacific Standard:
-   - The robber is held inside the bank, with the getaway car parked outside. The car is
-     locked to everyone else.
+   - The robber can walk around inside the bank, but the doors are locked: stepping out
+     puts them back inside. The getaway car is parked outside and stays locked (to
+     everyone, robber included) until GO.
    - Cops spawn in their cars on 5 fixed points (a 6th+ cop gets the same point one
      car-width over). The chopper spawns on the pad.
    - Police drive off, set up, and press **Y**.
    - The chase starts when every cop and the pilot is ready, or after `SetupMaxSec`.
-4. **Chase.** The robber is released: "GO!". Run to the car and lose them. Police see the
+4. **Chase** (8:00). The robber is put in the car: "GO!". For an 8 s head start, police
+   hit an invisible wall 40 m from the robber (they slide along it, never get thrown).
+   Lose them. Police see the
    robber's blip; the robber sees theirs.
 5. **Bust.**
    - A robber at walking pace (≤ `BustMaxSpeedKmh`, default 5 km/h) can be busted.
