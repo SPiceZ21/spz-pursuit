@@ -5,6 +5,7 @@
 -- the bust key", respawns dead cops and puts you back afterwards.
 
 local M = nil   -- current match; nil when not in one
+local HUD = exports["spz-minigames"]   -- shared in-game HUD (all on-screen text)
 
 local KEY_READY = Config.Keys.ready.control
 
@@ -31,22 +32,6 @@ end
 
 local function fmt(s) return ("%d:%02d"):format(math.floor(s / 60), s % 60) end
 
-local function text(str, x, y, scale, r, g, b)
-    SetTextFont(4)
-    SetTextScale(0.0, scale)
-    SetTextCentre(true)
-    SetTextOutline()
-    SetTextColour(r or 255, g or 255, b or 255, 235)
-    BeginTextCommandDisplayText("STRING")
-    AddTextComponentSubstringPlayerName(str)
-    EndTextCommandDisplayText(x, y)
-end
-
-local function bar(x, y, w, h, pct, r, g, b)
-    DrawRect(x, y, w, h, 10, 11, 14, 200)
-    if pct > 0 then DrawRect(x - w / 2 + (w * pct) / 2, y, w * pct, h * 0.65, r, g, b, 235) end
-end
-
 --- Where a cop spawns: their point, shifted sideways one car-width per `slot`.
 local function copSpot(spawn, slot)
     if not slot or slot == 0 then return spawn end
@@ -55,23 +40,8 @@ local function copSpot(spawn, slot)
     return { x = spawn.x + math.cos(h) * off, y = spawn.y + math.sin(h) * off, z = spawn.z, w = spawn.w }
 end
 
-local function bigMessage(title, sub, ms)
-    CreateThread(function()
-        local sf = RequestScaleformMovie("MP_BIG_MESSAGE_FREEMODE")
-        local deadline = GetGameTimer() + 2000
-        while not HasScaleformMovieLoaded(sf) and GetGameTimer() < deadline do Wait(0) end
-        if not HasScaleformMovieLoaded(sf) then return end
-        BeginScaleformMovieMethod(sf, "SHOW_SHARD_WASTED_MP_MESSAGE")
-        ScaleformMovieMethodAddParamTextureNameString(title)
-        ScaleformMovieMethodAddParamTextureNameString(sub or "")
-        EndScaleformMovieMethod()
-        local untilAt = GetGameTimer() + (ms or 4000)
-        while GetGameTimer() < untilAt do
-            DrawScaleformMovieFullscreen(sf, 255, 255, 255, 255, 0)
-            Wait(0)
-        end
-        SetScaleformMovieAsNoLongerNeeded(sf)
-    end)
+local function bigMessage(title, sub, color, ms)
+    HUD:Shard(title, sub, color, ms or 4000)
 end
 
 -- ── Spawning ─────────────────────────────────────────────────────────────────
@@ -134,10 +104,7 @@ CreateThread(function()
             if not inside or IsPedTryingToEnterALockedVehicle(ped) then
                 M.doorMsgUntil = GetGameTimer() + 2500
             end
-            if M.doorMsgUntil and GetGameTimer() < M.doorMsgUntil then
-                text("THE DOORS ARE LOCKED UNTIL THE POLICE ARE READY", 0.5, 0.135, 0.38, 255, 80, 80)
-            end
-            Wait(0)
+            Wait(0)   -- the "doors locked" warning is shown by the HUD thread
         else
             Wait(300)
         end
@@ -158,19 +125,9 @@ local function playClip(name)
     end
 end
 
--- Big centred number for the 3-2-1, drawn for ~0.9 s.
-local function flashCount(txt, r, g, b)
-    CreateThread(function()
-        local untilAt = GetGameTimer() + 900
-        while GetGameTimer() < untilAt do
-            SetTextFont(4); SetTextScale(0.0, 2.2); SetTextCentre(true); SetTextOutline()
-            SetTextColour(r or 255, g or 255, b or 255, 240)
-            BeginTextCommandDisplayText("STRING")
-            AddTextComponentSubstringPlayerName(txt)
-            EndTextCommandDisplayText(0.5, 0.36)
-            Wait(0)
-        end
-    end)
+-- Big centred number for the 3-2-1, shown for ~0.9 s.
+local function flashCount(txt, color)
+    HUD:Flash(txt, color, 900)
 end
 
 
@@ -203,10 +160,15 @@ RegisterNetEvent("spz-pursuit:begin", function(d)
         veh = 0, sentReady = false, holding = false, blips = {}, dead = false,
         back = GetEntityCoords(ped), backHeading = GetEntityHeading(ped),
     }
+    -- After the match everyone spawns at the hub's shared return point (DK garage).
+    if GetResourceState("spz-minigames") == "started" then
+        local ok, p = pcall(function() return exports["spz-minigames"]:ReturnPoint() end)
+        if ok and p then M.back, M.backHeading = vector3(p.x, p.y, p.z), p.w end
+    end
 
     -- Tells spz-races to hide its "[E] JOIN RACE" pill and ignore E, which
     -- would otherwise fire alongside HOLD E TO BUST.
-    LocalPlayer.state:set("inMinigame", "Hot Pursuit", false)
+    TriggerServerEvent("spz:setPlayerFlag", "inMinigame", "Hot Pursuit")
     TriggerEvent("spz:minigameChanged")
 
     fadeOut()
@@ -230,6 +192,7 @@ end)
 RegisterNetEvent("spz-pursuit:state", function(s)
     if not M then return end
     M.phase, M.remain, M.ready, M.police, M.bust = s.phase, s.remain, s.ready, s.police, s.bust
+    M.board = s.board
 end)
 
 RegisterNetEvent("spz-pursuit:countdown", function(n)
@@ -252,10 +215,10 @@ RegisterNetEvent("spz-pursuit:go", function(d)
             SetVehicleEngineOn(M.veh, true, true, false)
             SetVehicleUndriveable(M.veh, false)
         end
-        bigMessage("~r~GO!", ("%ds head start — lose the police"):format((d and d.headStart) or 0))
+        bigMessage("Go!", ("%ds head start — lose the police"):format((d and d.headStart) or 0), "bad", 3000)
         playClip("go")
     else
-        bigMessage("~b~ROBBER IS MOVING", "Chase them down")
+        bigMessage("Robber is moving", "Chase them down", "#3b82f6", 3000)
         playClip("go")
     end
 end)
@@ -266,10 +229,10 @@ RegisterNetEvent("spz-pursuit:over", function(r)
     if M.holding then TriggerServerEvent("spz-pursuit:bustHold", false); M.holding = false end
     FreezeEntityPosition(PlayerPedId(), false)
 
-    local title = r.winner == "police" and "~b~BUSTED" or "~r~ESCAPED"
-    local sub = (r.won and "You win" or "You lose") .. (r.payout and r.payout > 0 and ("  +%d credits"):format(r.payout) or "")
+    local title = r.winner == "police" and "Busted" or "Escaped"
+    local sub = (r.won and "You win" or "You lose") .. (r.payout and r.payout > 0 and ("  ·  +%d credits"):format(r.payout) or "")
     if r.reason and r.reason ~= "busted" and r.reason ~= "escaped" then sub = r.reason .. " · " .. sub end
-    bigMessage(title, sub, 5000)
+    bigMessage(title, sub, r.winner == "police" and "#3b82f6" or "bad", 5000)
 end)
 
 local function cleanup()
@@ -282,7 +245,8 @@ local function cleanup()
     local ped = PlayerPedId()
     FreezeEntityPosition(ped, false)
     lib.hideTextUI()
-    LocalPlayer.state:set("inMinigame", false, false)
+    HUD:Hud(nil)
+    TriggerServerEvent("spz:setPlayerFlag", "inMinigame", false)
     TriggerEvent("spz:minigameChanged")
     M = nil
 end
@@ -336,59 +300,77 @@ end)
 
 CreateThread(function()
     while true do
-        if M then
-            local phaseLabel = ({ setup = "SETUP", chase = "CHASE", over = "" })[M.phase] or ""
-            local roleLabel = Pursuit.RoleLabel(M.role):upper()
-            if M.phase ~= "over" then
-                text(("HOT PURSUIT · %s · %s · %s"):format(roleLabel, phaseLabel, fmt(M.remain or 0)), 0.5, 0.025, 0.46)
-            end
+        if M and M.phase == "over" then
+            HUD:Hud(nil)
+            Wait(100)
+        elseif M then
+            local hud = { chips = {
+                { text = Pursuit.RoleLabel(M.role), hot = true },
+                ({ setup = "Setup", chase = "Chase" })[M.phase] or "",
+                fmt(M.remain or 0),
+            } }
+            local now = GetGameTimer()
 
             if M.phase == "setup" then
-                local line
+                local ready = ("%d / %d police ready"):format(M.ready or 0, M.police or 0)
                 if M.role == "robber" then
-                    line = ("Wait till the cops get ready — %d/%d ready"):format(M.ready, M.police)
+                    hud.status = { label = "Wait for the cops", value = ready, sub = "Walk the bank — the doors open at GO" }
                 elseif M.sentReady then
-                    line = ("Ready — waiting for the others (%d/%d)"):format(M.ready, M.police)
+                    hud.status = { label = "Ready", value = ready, color = "ok", sub = "Waiting for the others" }
                 else
-                    line = ("Get in position · press [%s] when ready  (%d/%d)"):format(Config.Keys.ready.label, M.ready, M.police)
+                    hud.status = { label = "Get in position", value = ready }
+                    hud.foot = { text = "Ready up", key = Config.Keys.ready.label, color = "accent" }
                 end
-                text(line, 0.5, 0.058, 0.36, 200, 200, 200)
+                if M.doorMsgUntil and now < M.doorMsgUntil then
+                    hud.alert = "The doors are locked until the police are ready"
+                end
 
             elseif M.phase == "chase" then
                 if M.role == "robber" then
                     local kmh = speedKmh(PlayerPedId())
                     local slow = kmh <= Config.BustMaxSpeedKmh
-                    text(("%d km/h"):format(math.floor(kmh + 0.5)), 0.5, 0.058, 0.55, slow and 255 or 255, slow and 70 or 255, slow and 70 or 255)
-                    if slow then text("TOO SLOW — THE POLICE CAN BUST YOU", 0.5, 0.098, 0.34, 255, 70, 70) end
+                    hud.status = { label = "Speed", value = ("%d km/h"):format(math.floor(kmh + 0.5)), color = slow and "bad" or nil }
+                    if slow then hud.alert = "Too slow — the police can bust you" end
                     if M.veh ~= 0 and DoesEntityExist(M.veh) then
                         local hp = math.max(0.0, math.min(GetVehicleEngineHealth(M.veh), GetVehicleBodyHealth(M.veh))) / 1000.0
-                        bar(0.5, 0.18, 0.16, 0.014, hp, hp > 0.35 and 90 or 255, hp > 0.35 and 220 or 70, hp > 0.35 and 120 or 70)
-                        text(("CAR %d%%"):format(math.floor(hp * 100)), 0.5, 0.19, 0.3)
+                        hud.bar = { label = "Car", pct = math.floor(hp * 100) / 100 }
                     end
                 else
                     local rped = playerPed(M.robber)
                     if rped ~= 0 then
                         local d = #(GetEntityCoords(PlayerPedId()) - GetEntityCoords(rped))
                         local kmh = speedKmh(rped)
-                        text(("Robber %dm · %d km/h"):format(math.floor(d), math.floor(kmh + 0.5)), 0.5, 0.058, 0.4)
+                        hud.status = { label = "Robber", value = ("%dm"):format(math.floor(d)),
+                                       sub = ("%d km/h"):format(math.floor(kmh + 0.5)) }
                         if M.role == "cop" and d <= Config.BustDistance then
                             if kmh <= Config.BustMaxSpeedKmh then
-                                text("BUSTING — KEEP THEM BOXED IN", 0.5, 0.098, 0.42, 90, 170, 255)
+                                hud.hint = { text = "Busting — keep them boxed in", color = "#3b82f6" }
                             else
-                                text("Stop them to bust", 0.5, 0.098, 0.34, 200, 200, 200)
+                                hud.hint = "Stop them to bust"
                             end
                         end
                     else
-                        text("Robber out of range — follow the blip", 0.5, 0.058, 0.36, 200, 200, 200)
+                        hud.status = { label = "Robber", value = "Out of range", color = "dim", sub = "Follow the blip" }
                     end
                 end
 
                 if (M.bust or 0) > 0 then
-                    bar(0.5, 0.135, 0.22, 0.02, M.bust, 90, 170, 255)
-                    text(("BUSTING %d%%"):format(math.floor(M.bust * 100)), 0.5, 0.147, 0.32)
+                    hud.bar = { label = "Busting", pct = M.bust, color = "#3b82f6" }
+                end
+
+                -- Head start (police are walled off by the thread below).
+                if M.graceEnd and now < M.graceEnd then
+                    local left = math.ceil((M.graceEnd - now) / 1000)
+                    if M.role == "robber" then
+                        hud.hint = { text = ("Head start %ds — police can't close in"):format(left), color = "ok" }
+                    elseif playerPed(M.robber) ~= 0 then
+                        hud.alert = ("Head start %ds — stay %dm back"):format(left, math.floor(Config.HeadStartRadius or 60.0))
+                    end
                 end
             end
-            Wait(0)
+            hud.board = M.board
+            HUD:Hud(hud)
+            Wait(100)
         else
             Wait(400)
         end
@@ -473,9 +455,6 @@ CreateThread(function()
                         end
                         SetEntityVelocity(ent, vx, vy, v.z)
                     end
-                    text(("HEAD START %ds — STAY %dm BACK"):format(left, math.floor(R)), 0.5, 0.098, 0.42, 255, 80, 80)
-                else
-                    text(("HEAD START %ds — police can't close in"):format(left), 0.5, 0.135, 0.36, 120, 255, 140)
                 end
             end
             Wait(0)

@@ -202,7 +202,8 @@ local function endMatch(room, winner, reason)
 
     SetTimeout(5000, function()
         releasePlayers(room, match)
-        if Rooms[room.id] == room then Pursuit.BackToLobby(room) end
+        -- Match over: everyone leaves the room (it closes once empty).
+        if Rooms[room.id] == room then Pursuit.CloseRoom(room) end
     end)
 end
 
@@ -335,11 +336,47 @@ CreateThread(function()
                     local endsAt = (match.phase == "chase" and match.chaseEndsAt)
                         or (match.phase == "setup" and match.setupEndsAt)
                         or now
+                    -- Scoreboard: robber first, then the police.
+                    local rows, police_rows = {}, {}
+                    for src, p in pairs(match.players) do
+                        if p.role == "robber" then
+                            rows[1] = { src = src, name = p.name, icon = "mask", color = "bad", sub = "Robber",
+                                value = match.phase == "chase" and ("%d km/h"):format(math.floor(speedKmh(src) + 0.5)) or "In the bank" }
+                        else
+                            local row = { src = src, name = p.name, sub = p.role == "cop" and "Cop" or "Pilot",
+                                icon = p.role == "cop" and "car-on" or "helicopter", color = "#3b82f6" }
+                            if match.phase == "setup" then
+                                row.value = match.ready[src] and "Ready" or "Not ready"
+                                row.valueColor = match.ready[src] and "ok" or "dim"
+                            elseif match.robber and GetPlayerName(match.robber) then
+                                local d = dist(src, match.robber)
+                                if d == math.huge then
+                                    row.value, row.valueColor = "—", "dim"
+                                else
+                                    d = math.floor(d)
+                                    row.value, row._d = ("%dm"):format(d), d
+                                    row.valueColor = d <= Config.BustDistance and "ok" or nil
+                                end
+                            end
+                            police_rows[#police_rows + 1] = row
+                        end
+                    end
+                    table.sort(police_rows, function(a, b)
+                        if a._d and b._d then return a._d < b._d end
+                        return a.name < b.name
+                    end)
+                    for i, row in ipairs(police_rows) do
+                        row._d = nil
+                        row.sep = (i == 1 and rows[1] ~= nil) or nil
+                        rows[#rows + 1] = row
+                    end
+
                     local state = {
                         phase = match.phase,
                         remain = math.max(0, math.ceil((endsAt - now) / 1000)),
                         ready = ready, police = police,
                         bust = match.bust,
+                        board = { title = "Chase", numbered = false, rows = rows },
                     }
                     each(match, function(src) TriggerClientEvent("spz-pursuit:state", src, state) end)
                 end

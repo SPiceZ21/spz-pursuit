@@ -53,6 +53,8 @@ end
 local function busy(src)
     local st = Player(src).state
     if st.inRace or st.inQueue then return "in a race or race queue" end
+    -- One minigame room at a time, across every game.
+    if st.mgRoom and st.mgRoom ~= GetCurrentResourceName() then return "already in another minigame room — leave it first" end
     if GetResourceState("spz-races") == "started" then
         local ok, tt = pcall(function() return exports["spz-races"]:IsInTimeTrial(src) end)
         if ok and tt then return "in a time trial" end
@@ -148,10 +150,16 @@ end
 function Pursuit.CheckAutoStart(room)
     room.startToken = (room.startToken or 0) + 1
     if room.state ~= "lobby" or startProblem(room) then
+        room.hostGo = nil
         if room.countdown then
             room.countdown = nil
             for s in pairs(room.members) do notify(s, "Countdown cancelled.", "warning") end
         end
+        return
+    end
+    -- Everyone ready is not enough: only the host starts the match.
+    if not room.hostGo then
+        notify(room.host, "Everyone's ready — press Start in the hub.", "success")
         return
     end
     local token = room.startToken
@@ -177,6 +185,7 @@ end
 
 local function addMember(room, src)
     MemberRoom[src] = room.id
+    Player(src).state:set("mgRoom", GetCurrentResourceName(), true)
     room.members[src] = {
         name = Pursuit.NameOf(src), role = nil, ready = false,
         cars = { robber = Config.Cars.robber[1], cop = Config.Cars.cop[1], pilot = Config.Cars.pilot[1] },
@@ -190,6 +199,7 @@ function Pursuit.RemoveMember(src, why)
     if not room then return end
     room.members[src] = nil
     MemberRoom[src] = nil
+    if GetPlayerName(src) then Player(src).state:set("mgRoom", nil, true) end
 
     if room.state == "match" and Pursuit.OnMemberGone then Pursuit.OnMemberGone(room, src) end
 
@@ -366,6 +376,18 @@ lib.callback.register("spz-pursuit:savePreset", function(src, model, props)
     return true
 end)
 
+lib.callback.register("spz-pursuit:start", function(src)
+    local room = Pursuit.RoomOf(src)
+    if not room or room.state ~= "lobby" then return false, "You're not in a lobby" end
+    if room.host ~= src then return false, "Only the room host can start" end
+    local why = startProblem(room)
+    if why then return false, why end
+    room.hostGo = true
+    Pursuit.CheckAutoStart(room)
+    Pursuit.Broadcast(room)
+    return true
+end)
+
 lib.callback.register("spz-pursuit:ready", function(src)
     local room = Pursuit.RoomOf(src)
     local m = room and room.members[src]
@@ -418,6 +440,20 @@ AddEventHandler("playerDropped", function()
         pcall(function() exports["spz-core"]:DeleteBucket(p.bucket) end)
     end
 end)
+
+--- Called by match.lua when a match is over: the room closes and everyone
+--- is out of the lobby.
+function Pursuit.CloseRoom(room)
+    Rooms[room.id] = nil
+    for s in pairs(room.members) do
+        MemberRoom[s] = nil
+        if GetPlayerName(s) then
+            Player(s).state:set("mgRoom", nil, true)
+            notify(s, "Match over — you left the room. Open the hub to play again.", "inform")
+        end
+    end
+    room.members = {}
+end
 
 --- Called by match.lua when a match is over: back to the lobby, unready.
 function Pursuit.BackToLobby(room)
