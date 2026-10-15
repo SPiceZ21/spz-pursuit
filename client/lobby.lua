@@ -175,6 +175,18 @@ RegisterNetEvent("spz-pursuit:room", function(view)
 end)
 
 RegisterNetEvent("spz-pursuit:invited", function(inv)
+    -- Racing / queued / in another minigame: a dialog would grab mouse focus
+    -- and lock the car mid-race. Just tell them; the invite is kept, so the
+    -- room shows as invited in the hub once they are free.
+    do
+        local st = LocalPlayer.state
+        if st.inRace or st.inQueue or st.inMinigame or st.inTimeTrial then
+            lib.notify({ title = "Hot Pursuit invite",
+                description = ("%s invited you to %s — open the minigames hub when you're free."):format(inv.host or "Someone", "their pursuit room"),
+                type = "inform", duration = 7000 })
+            return
+        end
+    end
     local resp = lib.alertDialog({
         header = "Hot Pursuit invite",
         content = ("**%s** invited you to their pursuit room."):format(inv.host),
