@@ -108,9 +108,7 @@ end
 --- Why the room can't start yet, or nil.
 function Pursuit.StartBlocker(room)
     if count(room) < 1 + Config.MinCops then return ("Need at least %d players"):format(1 + Config.MinCops) end
-    for _, m in pairs(room.members) do
-        if not m.ready then return m.name .. " isn't ready" end
-    end
+    -- No ready-up: the host starts the match when the room is big enough.
     return nil
 end
 
@@ -157,15 +155,12 @@ function Pursuit.CheckAutoStart(room)
         end
         return
     end
-    -- Everyone ready is not enough: only the host starts the match.
-    if not room.hostGo then
-        notify(room.host, "Everyone's ready — press Start in the hub.", "success")
-        return
-    end
+    -- Only the host starts the match (Start in the hub).
+    if not room.hostGo then return end
     local token = room.startToken
     room.countdown = true
     for s in pairs(room.members) do
-        notify(s, ("Everyone's ready — roles are dealt in %ds."):format(Config.AutoStartDelay), "success")
+        notify(s, ("Starting — roles are dealt in %ds."):format(Config.AutoStartDelay), "success")
     end
     SetTimeout(Config.AutoStartDelay * 1000, function()
         if Rooms[room.id] ~= room or room.startToken ~= token or room.state ~= "lobby" then return end

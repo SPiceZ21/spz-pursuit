@@ -1,8 +1,8 @@
 -- client/lobby.lua — room menus (ox_lib context)
 --
 -- No room:  Create room · pending invites
--- In room:  cars (one per role) · ready · invite · members
---           Roles are dealt at random by the server once everyone is ready;
+-- In room:  cars (one per role) · start (host) · invite · members
+--           Roles are dealt at random by the server when the host starts;
 --           the match then starts on its own. Host can remove members.
 -- The server pushes the room on every change; an open room menu redraws.
 
@@ -113,13 +113,18 @@ local function roomMenu()
                 onSelect = function() openCarMenu(r) end,
             }
         end
-        options[#options + 1] = {
-            title = me.ready and "Ready ✔" or "Ready up", icon = me.ready and "circle-check" or "circle",
-            iconColor = me.ready and "#3dbf7a" or nil,
-            description = Room.countdown and "Starting — roles are being dealt"
-                or (me.ready and "Tap to un-ready" or ("Starts when all %d are ready (min %d)"):format(c.total, 1 + Room.limits.minCops)),
-            onSelect = function() call("ready"); openLobby() end,
-        }
+        -- No ready-up: the host starts the match.
+        if Room.isHost then
+            local enough = c.total >= 1 + Room.limits.minCops
+            options[#options + 1] = {
+                title = Room.countdown and "Starting…" or "Start match", icon = "play",
+                iconColor = enough and "#3dbf7a" or nil, disabled = Room.countdown or not enough,
+                description = enough and "Roles are dealt at random" or ("Need at least %d players"):format(1 + Room.limits.minCops),
+                onSelect = function() call("start"); openLobby() end,
+            }
+        else
+            options[#options + 1] = { title = "Waiting for the host to start", icon = "crown", disabled = true }
+        end
         -- Public lobby: anyone in it can invite friends.
         options[#options + 1] = { title = "Invite players", icon = "user-plus", arrow = true,
             description = ("%d / %d in lobby"):format(c.total, Room.limits.size), onSelect = openInviteMenu }
@@ -130,9 +135,8 @@ local function roomMenu()
         local line = m.role and Pursuit.RoleLabel(m.role) or "Role dealt at start"
         local opt = {
             title = (m.host and "★ " or "") .. m.name .. (m.me and " (you)" or ""),
-            description = line .. (m.ready and " · ready" or ""),
-            icon = m.ready and "circle-check" or (ROLE_ICON[m.role] or "user"),
-            iconColor = m.ready and "#3dbf7a" or nil,
+            description = line,
+            icon = ROLE_ICON[m.role] or "user",
         }
         if Room.isHost and not m.me and Room.state == "lobby" then
             opt.arrow = true

@@ -40,7 +40,9 @@ function Pursuit.Customize(model, onDone)
     end
 
     local preset = lib.callback.await("spz-pursuit:getPreset", false, model)
-    local veh = Pursuit.SpawnCar(model, { x = back.x, y = back.y, z = back.z, w = backHeading }, preset)
+    -- local-only: the preview bucket's strict lockdown deletes networked
+    -- client cars on sight, which is why the tuner used to open on nothing.
+    local veh = Pursuit.SpawnCar(model, { x = back.x, y = back.y, z = back.z, w = backHeading, localOnly = true }, preset)
 
     if veh ~= 0 then
         SetPedIntoVehicle(PlayerPedId(), veh, -1)

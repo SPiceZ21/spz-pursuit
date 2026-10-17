@@ -7,7 +7,6 @@
 local M = nil   -- current match; nil when not in one
 local HUD = exports["spz-minigames"]   -- shared in-game HUD (all on-screen text)
 
-local KEY_READY = Config.Keys.ready.control
 
 function Pursuit.InMatch() return M ~= nil end
 
@@ -181,17 +180,18 @@ RegisterNetEvent("spz-pursuit:begin", function(d)
     DoScreenFadeIn(600)
 
     if M.role == "robber" then
-        Pursuit.Notify("Wait for the cops to get ready — you're released the moment they are. Then get in your car and lose them.", "inform", "ROBBER")
+        Pursuit.Notify("The doors open when the countdown ends. Then get in your car and lose them.", "inform", "ROBBER")
     elseif M.role == "cop" then
-        Pursuit.Notify(("Set up your position, then press [%s] when ready."):format(Config.Keys.ready.label), "inform", "POLICE")
+        Pursuit.Notify("Get into position — the chase starts when the countdown ends.", "inform", "POLICE")
     else
-        Pursuit.Notify(("Get the chopper in position, then press [%s] when ready."):format(Config.Keys.ready.label), "inform", "PD CHOPPER")
+        Pursuit.Notify("Get the chopper in position — the chase starts when the countdown ends.", "inform", "PD CHOPPER")
     end
 end)
 
 RegisterNetEvent("spz-pursuit:state", function(s)
     if not M then return end
     M.phase, M.remain, M.ready, M.police, M.bust = s.phase, s.remain, s.ready, s.police, s.bust
+    M.robberPos = s.robberPos
     M.board = s.board
 end)
 
@@ -276,14 +276,6 @@ CreateThread(function()
         if M and M.phase ~= "over" then
             local sleep = 0
 
-            if M.phase == "setup" and M.role ~= "robber" and not M.sentReady then
-                if IsControlJustPressed(0, KEY_READY) then
-                    M.sentReady = true
-                    TriggerServerEvent("spz-pursuit:setupReady")
-                    PlaySoundFrontend(-1, "CONFIRM_BEEP", "HUD_MINI_GAME_SOUNDSET", true)
-                end
-            end
-
             -- Busting is automatic now (server-side, by distance + speed).
             if M.phase ~= "chase" then
                 sleep = (M.role == "robber") and 100 or 0
@@ -312,17 +304,15 @@ CreateThread(function()
             local now = GetGameTimer()
 
             if M.phase == "setup" then
-                local ready = ("%d / %d police ready"):format(M.ready or 0, M.police or 0)
+                -- setup is a plain countdown (no ready-up)
+                local left = fmt(M.remain or 0)
                 if M.role == "robber" then
-                    hud.status = { label = "Wait for the cops", value = ready, sub = "Walk the bank — the doors open at GO" }
-                elseif M.sentReady then
-                    hud.status = { label = "Ready", value = ready, color = "ok", sub = "Waiting for the others" }
+                    hud.status = { label = "Chase starts in", value = left, sub = "Walk the bank — the doors open at GO" }
                 else
-                    hud.status = { label = "Get in position", value = ready }
-                    hud.foot = { text = "Ready up", control = Config.Keys.ready.control, default = Config.Keys.ready.label, color = "accent" }
+                    hud.status = { label = "Get in position", value = left, sub = "The chase starts at zero" }
                 end
                 if M.doorMsgUntil and now < M.doorMsgUntil then
-                    hud.alert = "The doors are locked until the police are ready"
+                    hud.alert = "The doors are locked until the chase starts"
                 end
 
             elseif M.phase == "chase" then
@@ -396,7 +386,25 @@ CreateThread(function()
 
                 local ped = playerPed(r.src)
                 local blip = M.blips[r.src]
-                if show and ped ~= 0 then
+                -- Robber out of streaming range (ped gone on this client): keep
+                -- them on the map with a position blip from the server instead.
+                if show and ped == 0 and r.role == "robber" and M.robberPos then
+                    local p = M.robberPos
+                    if not (blip and DoesBlipExist(blip)) or GetBlipInfoIdEntityIndex(blip) ~= 0 then
+                        if blip and DoesBlipExist(blip) then RemoveBlip(blip) end
+                        blip = AddBlipForCoord(p.x, p.y, p.z)
+                        SetBlipSprite(blip, 1)
+                        SetBlipColour(blip, 1)
+                        SetBlipScale(blip, 1.0)
+                        SetBlipAsShortRange(blip, false)
+                        BeginTextCommandSetBlipName("STRING")
+                        AddTextComponentSubstringPlayerName("Robber")
+                        EndTextCommandSetBlipName(blip)
+                        M.blips[r.src] = blip
+                    else
+                        SetBlipCoords(blip, p.x, p.y, p.z)
+                    end
+                elseif show and ped ~= 0 then
                     if not (blip and DoesBlipExist(blip)) or GetBlipInfoIdEntityIndex(blip) ~= ped then
                         if blip and DoesBlipExist(blip) then RemoveBlip(blip) end
                         local robber = r.role == "robber"

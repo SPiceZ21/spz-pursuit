@@ -41,7 +41,10 @@ function Pursuit.SpawnCar(model, at, preset)
     while not HasModelLoaded(hash) and GetGameTimer() < deadline do Wait(0) end
     if not HasModelLoaded(hash) then return 0 end
 
-    local veh = CreateVehicle(hash, at.x, at.y, at.z, at.w or 0.0, true, false)
+    -- at.localOnly: a car only this player sees (the tuner preview). It has to
+    -- be local there: the preview bucket runs spz-core's strict entity
+    -- lockdown, which deletes networked entities a client creates on sight.
+    local veh = CreateVehicle(hash, at.x, at.y, at.z, at.w or 0.0, not at.localOnly, false)
     SetModelAsNoLongerNeeded(hash)
     if veh == 0 then return 0 end
 

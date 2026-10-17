@@ -55,7 +55,7 @@ Config.PilotSpawn = vec4(189.21, 228.56, 143.56, 210.19)
 -- ── Phases ──────────────────────────────────────────────────────────────────
 -- SETUP: robber held inside the bank, police position themselves and press
 -- ready. Starts the chase when every cop/pilot is ready, or when this runs out.
-Config.SetupMaxSec = 120
+Config.SetupMaxSec = 30    -- setup countdown before the chase (no ready-up any more)
 -- CHASE: the robber wins by not being busted before this runs out.
 Config.ChaseSec    = 480          -- 8:00
 

@@ -292,15 +292,13 @@ CreateThread(function()
           local ok, err = pcall(function()
             local match = room.match
             if room.state == "match" and match and match.phase ~= "over" then
-                -- Setup → chase when every cop / pilot is ready, or time's up.
+                -- Setup is a plain countdown (no ready-up): the chase starts when
+                -- the setup time runs out.
                 local police, ready = 0, 0
-                for src, p in pairs(match.players) do
-                    if p.role ~= "robber" then
-                        police = police + 1
-                        if match.ready[src] then ready = ready + 1 end
-                    end
+                for _, p in pairs(match.players) do
+                    if p.role ~= "robber" then police = police + 1 end
                 end
-                if match.phase == "setup" and (ready >= police or now >= match.setupEndsAt) then
+                if match.phase == "setup" and now >= match.setupEndsAt then
                     startChase(room)
                 end
 
@@ -371,7 +369,20 @@ CreateThread(function()
                         rows[#rows + 1] = row
                     end
 
+                    -- Robber position for the police map blip: once the
+                    -- robber is out of a cop's streaming range their ped no
+                    -- longer exists on that client, so an entity blip vanishes.
+                    local rpos = nil
+                    if match.phase == "chase" and match.robber then
+                        local rped = GetPlayerPed(match.robber)
+                        if rped ~= 0 then
+                            local c = GetEntityCoords(rped)
+                            rpos = { x = c.x, y = c.y, z = c.z }
+                        end
+                    end
+
                     local state = {
+                        robberPos = rpos,
                         phase = match.phase,
                         remain = math.max(0, math.ceil((endsAt - now) / 1000)),
                         ready = ready, police = police,
