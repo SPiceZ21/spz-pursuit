@@ -319,7 +319,7 @@ CreateThread(function()
                     hud.status = { label = "Ready", value = ready, color = "ok", sub = "Waiting for the others" }
                 else
                     hud.status = { label = "Get in position", value = ready }
-                    hud.foot = { text = "Ready up", key = Config.Keys.ready.label, color = "accent" }
+                    hud.foot = { text = "Ready up", control = Config.Keys.ready.control, default = Config.Keys.ready.label, color = "accent" }
                 end
                 if M.doorMsgUntil and now < M.doorMsgUntil then
                     hud.alert = "The doors are locked until the police are ready"
@@ -369,6 +369,9 @@ CreateThread(function()
                 end
             end
             hud.board = M.board
+            -- key bar (live bindings, resolved by spz-minigames)
+            hud.keys = hud.keys or {}
+            hud.keys[#hud.keys + 1] = { control = 200, default = "ESC", pad = "START_INDEX", label = "Menu · leave" }
             HUD:Hud(hud)
             Wait(100)
         else
