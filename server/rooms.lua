@@ -50,9 +50,17 @@ local function count(room, role)
     return n
 end
 
+-- Joining a pursuit room drops your E-join race queue spot instead of refusing.
+local function leaveRaceQueue(src)
+    local st = Player(src).state
+    if not (st.inQueue or st.pendingRace) or st.inRace then return end
+    if GetResourceState("spz-races") ~= "started" then return end
+    pcall(function() exports["spz-races"]:LeaveQueue(src) end)
+end
+
 local function busy(src)
     local st = Player(src).state
-    if st.inRace or st.inQueue then return "in a race or race queue" end
+    if st.inRace then return "in a race" end
     -- One minigame room at a time, across every game.
     if st.mgRoom and st.mgRoom ~= GetCurrentResourceName() then return "already in another minigame room — leave it first" end
     if GetResourceState("spz-races") == "started" then
@@ -181,6 +189,7 @@ end
 local function addMember(room, src)
     MemberRoom[src] = room.id
     Player(src).state:set("mgRoom", GetCurrentResourceName(), true)
+    leaveRaceQueue(src)
     room.members[src] = {
         name = Pursuit.NameOf(src), role = nil, ready = false,
         cars = { robber = Config.Cars.robber[1], cop = Config.Cars.cop[1], pilot = Config.Cars.pilot[1] },
@@ -295,7 +304,9 @@ lib.callback.register("spz-pursuit:onlinePlayers", function(src)
     local list = {}
     for _, sid in ipairs(GetPlayers()) do
         local s = tonumber(sid)
-        if s ~= src and not MemberRoom[s] then
+        local st = Player(s).state
+        -- Busy in a lobby / minigame / race: not in the invite list at all.
+        if s ~= src and not MemberRoom[s] and not (st.mgRoom or st.inMinigame or st.inRace or st.inTimeTrial) then
             list[#list + 1] = { src = s, name = Pursuit.NameOf(s), busy = busy(s) }
         end
     end
