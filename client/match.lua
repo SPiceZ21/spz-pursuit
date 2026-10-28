@@ -69,6 +69,10 @@ local function spawnRobber()
 
     M.veh = Pursuit.SpawnCar(M.model, car, M.preset)
     if M.veh ~= 0 then
+        -- Random base-game chameleon paint (161-222, build 2944+), whole body.
+        local paint = math.random(161, 222)
+        SetVehicleColours(M.veh, paint, paint)
+        SetVehicleExtraColours(M.veh, paint, select(2, GetVehicleExtraColours(M.veh)))
         -- The getaway car is the robber's alone, and stays locked (to them
         -- too) until GO, so it can't be taken early.
         SetVehicleDoorsLockedForAllPlayers(M.veh, true)

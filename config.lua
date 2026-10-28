@@ -15,13 +15,13 @@ Config.MaxRoomSize = 1 + Config.MaxCops + Config.MaxPilots
 -- ── Cars ────────────────────────────────────────────────────────────────────
 -- First entry is the default when a player never picks.
 Config.Cars = {
-    -- Gabz addon sports + super cars (gabz/gb_vehicles_*).
+    -- Base-game Sports class (vehicle class 6).
     robber = {
-        "gbcomets2r", "gbsentinelgts", "gbargento2f", "gbcyphergts", "gbmilano", "gbmochi",
-        "gbnexusrr", "gbretinueloz", "gbromulus", "gbronin", "gbrumina", "gbschlagensp",
-        "gbschwartzers", "gbsolace", "gbtenfr", "gbvivantgrb",
-        "gb811s2", "gbbanshees", "gbcheetahs", "gbemerussb1", "gbprospero", "gbtempestafs",
-        "gbtr3s", "gbzeitgeist",
+        "comet2", "comet5", "comets2r", "carbonizzare", "elegy", "elegy2", "feltzer2",
+        "furoregt", "jester", "jester3", "jugular", "kuruma", "massacro", "neon",
+        "pariah", "penumbra2", "rapidgt", "schafter3", "schlagen", "schwarzer",
+        "specter", "sultan2", "vstr", "banshee", "buffalo2", "italigto",
+        "ninef", "omnis", "growler", "calico", "euros", "zr350", "remus",
     },
     -- Gabz police fleet (gabz/gb_vehicles_pd_ems).
     cop = {
