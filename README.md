@@ -1,72 +1,61 @@
 # spz-pursuit
 
-> Hot Pursuit — robber vs police, from Pacific Standard · `v1.0.0`
+> Hot Pursuit: one robber, up to 10 cops and a PD chopper.
 
-## How a match goes
+![version](https://img.shields.io/badge/version-1.11.0-ff6200) ![SPiceZ-Core](https://img.shields.io/badge/SPiceZ--Core-beta-18181b)
 
-1. **Room.** A host opens `/pursuit` (or radial → Pursuit), creates a room, and invites players.
-2. **Soft launch.** In the room, everyone:
-   - picks a role: 1 **Robber**, 1–10 **Cops**, and optionally 1 **PD Chopper**. The host
-     can set anyone's role or remove them;
-   - picks a car for that role;
-   - opens **Customize car**, which is the full spz-tunners menu on a preview of that car,
-     in a private bucket. The setup is saved to the room and applied when the car spawns;
-   - presses **Ready**.
+## Overview
 
-   The host presses **Start match** once there's exactly 1 robber, at least 1 cop, and
-   everyone is ready.
-3. **Setup.** Everyone moves to a private bucket at Pacific Standard:
-   - The robber can walk around inside the bank, but the doors are locked: stepping out
-     puts them back inside. The getaway car is parked outside and stays locked (to
-     everyone, robber included) until GO.
-   - Cops spawn in their cars on 5 fixed points (a 6th+ cop gets the same point one
-     car-width over). The chopper spawns on the pad.
-   - Police drive off, set up, and press **Y**.
-   - The chase starts when every cop and the pilot is ready, or after `SetupMaxSec`.
-4. **Chase** (8:00). The robber is put in the car: "GO!". For an 8 s head start, police
-   hit an invisible wall 40 m from the robber (they slide along it, never get thrown).
-   Lose them. Police see the
-   robber's blip; the robber sees theirs.
-5. **Bust.**
-   - A robber at walking pace (≤ `BustMaxSpeedKmh`, default 5 km/h) can be busted.
-   - The robber's HUD shows their speed, and warns in red when they're slow enough.
-   - A cop within `BustDistance` sees **HOLD E TO BUST**. Holding fills the bar over
-     `BustHoldSec`, and it drains if the robber gets moving.
-   - The bar is computed by the server from real positions and speeds.
-6. **Result.**
-   - Police win if the robber is busted, dies, or leaves.
-   - The robber wins by surviving `ChaseSec`, or if all police leave.
-   - Winners get `WinReward` credits. Everyone is put back where they were, and the room
-     returns to the lobby for another round.
+A host opens a room and players pick roles, cars and tuner setups. The robber breaks out of Pacific Standard, police set up, then chase; stop the robber and hold `E` to bust. The robber wins by surviving the timer.
 
-Cops who die respawn at their spawn point with a new car after `CopRespawnSec`.
+## Features
 
-## Contact
+- Rooms with roles: robber, 1–10 cops, PD chopper
+- Per-role car and tuner setup
+- Server-side bust meter
+- Robber car in a random chameleon paint
 
-Players are normally phased (spz-core). Everyone in a match carries the `spz:contact`
-statebag, and spz-core's phasing leaves pairs where **both** players have it to collide.
-So cops can PIT and box the robber in, while the rest of the server stays ghosted.
+## Requirements
 
-## Structure
+| Resource | Type |
+|---|---|
+| `ox_lib` | third-party |
+| `spz-minigames` | SPiceZ module |
+| `spz-core` | SPiceZ module |
+| `spz-identity` | SPiceZ module |
+| `spz-tunners` | SPiceZ module |
 
-| Side | File | Purpose |
-|---|---|---|
-| Shared | `config.lua` | Spawns, role limits, cars, timers, bust rules, keys, reward |
-| Server | `server/rooms.lua` | Rooms, invites, roles, cars, tuner presets, ready, start, preview bucket |
-| Server | `server/match.lua` | Bucket, spawns, setup → chase → over, server-side bust bar, result |
-| Client | `client/lobby.lua` | Room menus (ox_lib context), invite prompt |
-| Client | `client/customize.lua` | Tuner preview in a private bucket |
-| Client | `client/match.lua` | Spawning, HUD, ready / bust input, blips, deaths, return |
-| Client | `client/util.lua` | Car spawn with tuner preset, labels |
+## Installation
+
+Included in the [txAdmin recipe](https://github.com/SPiceZ21/spz-txrecipe). Manual install:
+
+1. Download `spz-pursuit` from GitHub (latest release, or the repository) into your `resources` folder.
+2. Add to `server.cfg`, after its requirements:
+
+```cfg
+ensure spz-pursuit
+```
+
+## Configuration
+
+- `config.lua`
+
+See the file for every option.
 
 ## Commands
 
-| Command | Effect |
+| Command | Who | Description |
+|---|---|---|
+| `/pursuit` | player | Open the Hot Pursuit room menu |
+
+## Key binds
+
+Rebindable in **Settings → Key Bindings → FiveM**.
+
+| Action | Default |
 |---|---|
-| `/pursuit`, `pursuitmenu` | Room menu (radial → Pursuit) |
+| Hot Pursuit room menu | _unbound_ |
 
-In a match: **Y** police ready during setup · **E** hold to bust.
+---
 
-## Dependencies
-
-`ox_lib` · `spz-core` · `spz-identity` · `spz-tunners` · optional `spz-progression` (rewards), `spz-log`
+Part of **SPiceZ-Core** — [documentation](https://github.com/SPiceZ21/Docs) · [all modules](https://github.com/SPiceZ21/Docs/blob/main/modules/README.md)
