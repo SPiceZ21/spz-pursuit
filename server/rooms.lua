@@ -473,5 +473,13 @@ end
 AddEventHandler("playerDropped", function()
     local src = source
     Invites[src] = nil
+    -- Pursuit cars are spawned by the clients, so nothing server-side tracks
+    -- them: delete whatever the leaver was driving, or it stays in the match.
+    local room = Pursuit.RoomOf(src)
+    if room and room.state == "match" then
+        local ped = GetPlayerPed(src)
+        local veh = ped ~= 0 and GetVehiclePedIsIn(ped, false) or 0
+        if veh ~= 0 and DoesEntityExist(veh) then DeleteEntity(veh) end
+    end
     Pursuit.RemoveMember(src, "disconnected")
 end)
