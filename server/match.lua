@@ -176,8 +176,8 @@ end
 
 local function payWinner(src)
     local reward = Config.WinReward or 0
-    if reward <= 0 or GetResourceState("spz-progression") ~= "started" then return 0 end
-    pcall(function() exports["spz-progression"]:GrantBonus(src, { credits = reward, reason = "Hot Pursuit won" }) end)
+    if reward <= 0 or GetResourceState("spz-races") ~= "started" then return 0 end
+    pcall(function() exports["spz-races"]:GrantBonus(src, { credits = reward, reason = "Hot Pursuit won" }) end)
     return reward
 end
 
