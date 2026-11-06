@@ -23,7 +23,7 @@ end
 local notify = Pursuit.Notify
 
 function Pursuit.Profile(src)
-    local ok, p = pcall(function() return exports["spz-identity"]:GetProfile(src) end)
+    local ok, p = pcall(function() return exports["spz-core"]:GetProfile(src) end)
     return ok and p or nil
 end
 

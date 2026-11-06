@@ -28,6 +28,5 @@ dependencies {
   'ox_lib',
   'spz-minigames',   -- shared in-game HUD
   'spz-core',
-  'spz-identity',
   'spz-vehicles',   -- tuner
 }
