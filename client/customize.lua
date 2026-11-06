@@ -14,8 +14,8 @@ end
 
 function Pursuit.Customize(model, onDone)
     if busy then return end
-    if GetResourceState("spz-tunners") ~= "started" then
-        return Pursuit.Notify("The tuner (spz-tunners) isn't running", "error")
+    if GetResourceState("spz-vehicles") ~= "started" then
+        return Pursuit.Notify("The tuner (spz-vehicles) isn't running", "error")
     end
     busy = true
 
@@ -49,7 +49,7 @@ function Pursuit.Customize(model, onDone)
         FreezeEntityPosition(veh, true)
         DoScreenFadeIn(300)
 
-        exports["spz-tunners"]:OpenTunerMenu(veh)
+        exports["spz-vehicles"]:OpenTunerMenu(veh)
 
         -- Wait for the tuner to close (submenu hops leave a short gap).
         Wait(500)
@@ -59,7 +59,7 @@ function Pursuit.Customize(model, onDone)
             Wait(100)
         end
 
-        local props = exports["spz-tunners"]:GetVehicleMods(veh)
+        local props = exports["spz-vehicles"]:GetVehicleMods(veh)
         if props then
             lib.callback.await("spz-pursuit:savePreset", false, model, props)
             Pursuit.Notify(Pursuit.CarLabel(model) .. " setup saved", "success")

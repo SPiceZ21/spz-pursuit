@@ -29,5 +29,5 @@ dependencies {
   'spz-minigames',   -- shared in-game HUD
   'spz-core',
   'spz-identity',
-  'spz-tunners',
+  'spz-vehicles',   -- tuner
 }

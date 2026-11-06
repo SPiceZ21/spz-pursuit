@@ -63,8 +63,8 @@ function Pursuit.SpawnCar(model, at, preset)
     SetVehicleModKit(veh, 0)
     SetVehicleDirtLevel(veh, 0.0)
     SetVehicleEngineOn(veh, true, true, false)
-    if preset and GetResourceState("spz-tunners") == "started" then
-        pcall(function() exports["spz-tunners"]:ApplyVehicleMods(veh, preset) end)
+    if preset and GetResourceState("spz-vehicles") == "started" then
+        pcall(function() exports["spz-vehicles"]:ApplyVehicleMods(veh, preset) end)
     end
     return veh
 end
