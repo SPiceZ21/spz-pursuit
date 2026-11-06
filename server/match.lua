@@ -196,7 +196,7 @@ local function endMatch(room, winner, reason)
     end)
 
     pcall(function()
-        exports["spz-log"]:Log("minigame", "Hot Pursuit", ("Room %d: %s won (%s)"):format(room.id, winner, reason), "success")
+        exports["spz-discord"]:Log("minigame", "Hot Pursuit", ("Room %d: %s won (%s)"):format(room.id, winner, reason), "success")
     end)
     log(("room %d: %s won (%s)"):format(room.id, winner, reason))
 
